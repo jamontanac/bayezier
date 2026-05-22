@@ -1,0 +1,19 @@
+# Rust
+target/
+**/target/
+
+# Zig
+.zig-cache/
+zig-out/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local outputs
+out/
+*.log
+
+# macOS
+.DS_Store
