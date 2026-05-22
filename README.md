@@ -4,7 +4,7 @@ A dual-language exploration of Bayesian kNN: posterior distributions over k and 
 > Bayesian k-nearest neighbour classification — smooth posterior curves
 > over k and β, implemented in Rust and Zig.
 
-Based on [Holmes & Adams (2002)](https://doi.org/10.1111/1467-9868.00354).
+Based on [Holmes & Adams (2002)](https://hedibert.org/wp-content/uploads/2016/02/holmes-adams-2002.pdf).
 Dual-language implementation for learning purposes.
 
 [![Rust CI](https://github.com/you/bayezier/actions/workflows/rust.yml/badge.svg)]()
