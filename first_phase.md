@@ -12,8 +12,8 @@ Goal: reshape the repository to the planned Rust + Zig monorepo layout, then com
 
 - [x] Create `rust/`, `zig/`, `data/`, `benchmarks/`, `.github/workflows/` at repo root.
 - [x] Add root `NOTES.md` (cross-language diary placeholder).
-- [ ] Add `data/README.md` describing shared CSV conventions.
-- [ ] Add `benchmarks/README.md` describing shared JSON output schema and parity rule (`max |rust - zig| < 1e-4`).
+- [x] Add `data/README.md` describing shared CSV conventions.
+- [x] Add `benchmarks/README.md` describing shared JSON output schema and parity rule (`max |rust - zig| < 1e-4`).
 
 ## 2) Rust workspace scaffold (no algorithm yet)
 
@@ -34,9 +34,9 @@ Goal: reshape the repository to the planned Rust + Zig monorepo layout, then com
 
 ## 3) Shared contracts before implementation depth
 
-- [ ] Define CSV field expectations for train/test files (features + label conventions) in `data/README.md`.
-- [ ] Define JSON output contract (required keys, value types, and example payload) in `benchmarks/README.md`.
-- [ ] Ensure both contracts are language-agnostic and explicitly shared by Rust and Zig.
+- [x] Define CSV field expectations for train/test files (features + label conventions) in `data/README.md`.
+- [x] Define JSON output contract (required keys, value types, and example payload) in `benchmarks/README.md`.
+- [x] Ensure both contracts are language-agnostic and explicitly shared by Rust and Zig.
 
 ## 4) First real implementation task (Rust only)
 
