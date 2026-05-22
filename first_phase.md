@@ -40,10 +40,10 @@ Goal: reshape the repository to the planned Rust + Zig monorepo layout, then com
 
 ## 4) First real implementation task (Rust only)
 
-- [ ] Implement `types.rs` with core data structures (`DataMatrix`, `Labels`, `ModelParams`, `PnnModel`).
-- [ ] Implement initial `knn.rs` neighbor search API (can start simple, optimize later).
-- [ ] Add `rust/pnn-core/tests/knn_toy.rs` with a 5-point hand-validated nearest-neighbor test.
-- [ ] Run `cargo test -p pnn-core` and ensure toy kNN test passes.
+- [x] Implement `types.rs` with core data structures (`DataMatrix`, `Labels`, `ModelParams`, `PnnModel`).
+- [x] Implement initial `knn.rs` neighbor search API (can start simple, optimize later).
+- [x] Add `rust/pnn-core/tests/knn_toy.rs` with a 5-point hand-validated nearest-neighbor test.
+- [x] Run `cargo test -p pnn-core` and ensure toy kNN test passes.
 
 ## 5) Minimal CLI contract check
 
@@ -60,6 +60,6 @@ Goal: reshape the repository to the planned Rust + Zig monorepo layout, then com
 ## Exit criteria for first phase
 
 - [ ] Repository layout matches the planned monorepo architecture.
-- [ ] Rust workspace and crates compile cleanly.
+- [x] Rust workspace and crates compile cleanly.
 - [ ] Shared CSV/JSON contracts are documented and stable.
-- [ ] First algorithmic checkpoint is complete: Rust kNN + toy correctness test.
+- [x] First algorithmic checkpoint is complete: Rust kNN + toy correctness test.
