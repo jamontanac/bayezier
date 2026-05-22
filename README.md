@@ -7,6 +7,6 @@ A dual-language exploration of Bayesian kNN: posterior distributions over k and 
 Based on [Holmes & Adams (2002)](https://hedibert.org/wp-content/uploads/2016/02/holmes-adams-2002.pdf).
 Dual-language implementation for learning purposes.
 
-[![Rust CI](https://github.com/you/bayezier/actions/workflows/rust.yml/badge.svg)]()
-[![Zig CI](https://github.com/you/bayezier/actions/workflows/zig.yml/badge.svg)]()
+[![Rust CI](https://github.com/jamontanac/bayezier/actions/workflows/rust.yml/badge.svg)](https://github.com/jamontanac/bayezier/actions/workflows/rust.yml)
+[![Zig CI](https://github.com/jamontanac/bayezier/actions/workflows/zig.yml/badge.svg)](https://github.com/jamontanac/bayezier/actions/workflows/zig.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
