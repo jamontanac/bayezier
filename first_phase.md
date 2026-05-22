@@ -17,20 +17,20 @@ Goal: reshape the repository to the planned Rust + Zig monorepo layout, then com
 
 ## 2) Rust workspace scaffold (no algorithm yet)
 
-- [ ] Create `rust/Cargo.toml` workspace with members: `pnn-core`, `pnn-cli`, `pnn-py`.
-- [ ] Create crates:
-  - [ ] `rust/pnn-core` (library)
-  - [ ] `rust/pnn-cli` (binary)
-  - [ ] `rust/pnn-py` (PyO3 bindings placeholder)
-- [ ] In `rust/pnn-core/src/`, add stubs:
-  - [ ] `lib.rs`
-  - [ ] `types.rs`
-  - [ ] `knn.rs`
-  - [ ] `model.rs`
-  - [ ] `inference.rs`
-  - [ ] `predict.rs`
-- [ ] Wire module exports in `lib.rs` so the crate compiles.
-- [ ] Run `cargo check --workspace` from `rust/` and fix all compile issues.
+- [x] Create `rust/Cargo.toml` workspace with members: `pnn-core`, `pnn-cli`, `pnn-py`.
+- [x] Create crates:
+  - [x] `rust/pnn-core` (library)
+  - [x] `rust/pnn-cli` (binary)
+  - [x] `rust/pnn-py` (PyO3 bindings placeholder)
+- [x] In `rust/pnn-core/src/`, add stubs:
+  - [x] `lib.rs`
+  - [x] `types.rs`
+  - [x] `knn.rs`
+  - [x] `model.rs`
+  - [x] `inference.rs`
+  - [x] `predict.rs`
+- [x] Wire module exports in `lib.rs` so the crate compiles.
+- [x] Run `cargo check --workspace` from `rust/` and fix all compile issues.
 
 ## 3) Shared contracts before implementation depth
 

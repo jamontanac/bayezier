@@ -1,0 +1,3 @@
+[workspace]
+members = ["pnn-core", "pnn-cli", "pnn-py"]
+resolver = "2"
