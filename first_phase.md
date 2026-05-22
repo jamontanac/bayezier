@@ -10,8 +10,8 @@ Goal: reshape the repository to the planned Rust + Zig monorepo layout, then com
 
 ## 1) Create monorepo folder structure
 
-- [ ] Create `rust/`, `zig/`, `data/`, `benchmarks/`, `.github/workflows/` at repo root.
-- [ ] Add root `NOTES.md` (cross-language diary placeholder).
+- [x] Create `rust/`, `zig/`, `data/`, `benchmarks/`, `.github/workflows/` at repo root.
+- [x] Add root `NOTES.md` (cross-language diary placeholder).
 - [ ] Add `data/README.md` describing shared CSV conventions.
 - [ ] Add `benchmarks/README.md` describing shared JSON output schema and parity rule (`max |rust - zig| < 1e-4`).
 
