@@ -6,7 +6,16 @@ channels = ["conda-forge"]
 platforms = ["osx-arm64", "osx-64", "linux-64"]
 
 [dependencies]
-python = "3.12.*"
+# Python interpreter
+python = ">=3.12,<3.13"
+
+[feature.dev.dependencies]
+cargo-nextest = ">=0.9"
+cargo-insta = ">=1.43,<2"
+maturin = ">=1.5,<2.0"
+rust = ">=1.85"
+rust-src = "*"
+uv = ">=0.10.1" # UV for maturin (maturin develop --uv)
 
 [tasks]
 rust-check = { cmd = "cargo check --workspace", cwd = "rust" }

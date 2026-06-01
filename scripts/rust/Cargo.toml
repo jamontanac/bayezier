@@ -1,0 +1,14 @@
+
+# scripts/rust/Cargo.toml
+[package]
+name = "benchmark_sum"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rand = "0.8"
+
+# Add this to point Cargo directly to your script file
+[[bin]]
+name = "benchmark_sum"
+path = "benchmark_sum.rs"
