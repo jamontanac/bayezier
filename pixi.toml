@@ -1,0 +1,16 @@
+[workspace]
+name = "bayezier"
+version = "0.1.0"
+description = "Rust-first Bayesian kNN monorepo with parity tooling"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[dependencies]
+python = "3.12.*"
+
+[tasks]
+rust-check = { cmd = "cargo check --workspace", cwd = "rust" }
+rust-test = { cmd = "cargo test --workspace", cwd = "rust" }
+rust-benchmark = { cmd = "cargo run -p pnn-cli -- --train ../data/sample_train.csv --test ../data/sample_test.csv --out ../benchmarks/out/rust.json --dataset sample --implementation rust --k 3 --beta 1.0", cwd = "rust" }
+compare = { cmd = "python benchmarks/compare.py --rust-output benchmarks/out/rust.json --baseline-output benchmarks/out/rust_baseline.json --tolerance 1e-4" }
+parity = { cmd = "pixi run rust-benchmark && python benchmarks/compare.py --rust-output benchmarks/out/rust.json --baseline-output benchmarks/out/rust_baseline.json --tolerance 1e-4" }

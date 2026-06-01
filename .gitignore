@@ -11,6 +11,9 @@ zig-out/
 __pycache__/
 *.py[cod]
 
+# Pixi
+.pixi/
+
 # Local outputs
 out/
 *.log
