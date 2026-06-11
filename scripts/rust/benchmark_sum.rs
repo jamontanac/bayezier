@@ -43,7 +43,6 @@ fn benchmark(a: &[f64], b: &[f64]) {
     let _ = squared_euclidean_distance_for(&a, &b);
 
     println!("Running benchmark...");
-
     // Benchmark Iterator
     let start_iter = Instant::now();
     // black_box prevents the compiler from pre-calculating the result at compile time
@@ -68,6 +67,7 @@ fn main() {
     for size in sizes {
         println!("\n📊 Benchmarking with vector size: {}", size);
         let (a, b) = generate_mock_data(size);
+
          benchmark(&a, &b);
     }
 
