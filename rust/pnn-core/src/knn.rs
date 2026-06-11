@@ -79,28 +79,33 @@ pub fn k_nearest(data: &DataMatrix, query: &[f64], k: usize) -> Result<Vec<usize
         .map(|(idx, row)| (idx, squared_euclidean_distance(row, query)))
         .collect();
 
-    ranked.sort_by(|(idx_a, dist_a), (idx_b, dist_b)| {
-        dist_a
-            .partial_cmp(dist_b)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| idx_a.cmp(idx_b))
+    if k > 0 && k <= ranked.len() {
+        ranked.select_nth_unstable_by(k - 1, |(idx_a, dist_a), (idx_b, dist_b)| {
+            dist_a.partial_cmp(dist_b).unwrap_or(Ordering::Equal).then_with(|| idx_a.cmp(idx_b))
+        });
+    }
+
+    let mut top_k = ranked;
+    top_k.truncate(k);
+    top_k.sort_by(|(idx_a, dist_a), (idx_b, dist_b)| {
+        dist_a.partial_cmp(dist_b).unwrap_or(Ordering::Equal).then_with(|| idx_a.cmp(idx_b))
     });
 
-    Ok(ranked
-        .into_iter()
-        .take(k)
-        .map(|(idx, _distance)| idx)
-        .collect())
+    Ok(top_k.into_iter().map(|(idx, _)| idx).collect())
 }
 
+// Here we keep the for implementation of squared_euclidean_distance since performance measurements
+// showed this work better
 fn squared_euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| {
-            let delta = x - y;
-            delta * delta
-        })
-        .sum()
+    let mut sum = 0.0;
+    let min_len = a.len().min(b.len());
+    
+    for i in 0..min_len {
+        let delta = a[i] - b[i];
+        sum += delta * delta;
+    }
+    
+    sum
 }
 
 fn validate_inputs(data: &DataMatrix, query: &[f64], k: usize) -> Result<(), KnnError> {
