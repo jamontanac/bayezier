@@ -4,4 +4,7 @@ pub mod model;
 pub mod predict;
 pub mod types;
 
-pub use types::{DataMatrix, Labels, ModelParams, PnnModel};
+pub use types::{
+    CountTensor, DataMatrix, InferenceMethod, Labels, ModelError, PnnModel, PosteriorDraw,
+    SamplerConfig,
+};

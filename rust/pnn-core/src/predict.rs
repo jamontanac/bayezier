@@ -1,5 +1,5 @@
-use crate::types::{ModelParams, PnnModel};
+use crate::types::{PnnModel, PosteriorDraw};
 
-pub fn predict(_model: &PnnModel, _x_new: &[f64], _samples: &[ModelParams]) -> Vec<f64> {
+pub fn predict(_model: &PnnModel, _x_new: &[f64], _draws: &[PosteriorDraw]) -> Vec<f64> {
     Vec::new()
 }
