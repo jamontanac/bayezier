@@ -162,7 +162,8 @@ impl PnnModel {
 
         let n_train = x_train.len();
         for &k in &k_values {
-            if k == 0 || k > n_train {
+            // After self-exclusion there are only n_train-1 neighbors, so k must be < n_train.
+            if k == 0 || k >= n_train {
                 return Err(ModelError::InvalidKValue { k, n_train });
             }
         }
