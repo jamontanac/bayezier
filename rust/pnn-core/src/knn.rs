@@ -1,5 +1,5 @@
+use crate::math::{cmp_dist_then_idx, sq_euclidean};
 use crate::types::DataMatrix;
-use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum KnnError {
@@ -76,37 +76,20 @@ pub fn k_nearest(data: &DataMatrix, query: &[f64], k: usize) -> Result<Vec<usize
     let mut ranked: Vec<(usize, f64)> = data
         .iter()
         .enumerate()
-        .map(|(idx, row)| (idx, squared_euclidean_distance(row, query)))
+        .map(|(idx, row)| (idx, sq_euclidean(row, query)))
         .collect();
 
     if k > 0 && k <= ranked.len() {
-        ranked.select_nth_unstable_by(k - 1, |(idx_a, dist_a), (idx_b, dist_b)| {
-            dist_a.partial_cmp(dist_b).unwrap_or(Ordering::Equal).then_with(|| idx_a.cmp(idx_b))
-        });
+        ranked.select_nth_unstable_by(k - 1, cmp_dist_then_idx);
     }
 
     let mut top_k = ranked;
     top_k.truncate(k);
-    top_k.sort_by(|(idx_a, dist_a), (idx_b, dist_b)| {
-        dist_a.partial_cmp(dist_b).unwrap_or(Ordering::Equal).then_with(|| idx_a.cmp(idx_b))
-    });
+    top_k.sort_by(cmp_dist_then_idx);
 
     Ok(top_k.into_iter().map(|(idx, _)| idx).collect())
 }
 
-// Here we keep the for implementation of squared_euclidean_distance since performance measurements
-// showed this work better
-fn squared_euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
-    let mut sum = 0.0;
-    let min_len = a.len().min(b.len());
-    
-    for i in 0..min_len {
-        let delta = a[i] - b[i];
-        sum += delta * delta;
-    }
-    
-    sum
-}
 
 fn validate_inputs(data: &DataMatrix, query: &[f64], k: usize) -> Result<(), KnnError> {
     if data.is_empty() {
