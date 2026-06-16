@@ -6,6 +6,10 @@
 **Output:** `predictions` — shape `[n_test, n_classes]`, Monte Carlo average over all saved draws.
 **How:** For each (β, k) in the chain, compute k-NN class counts for each test point, apply the PNN softmax, then average across draws.
 
+**Related docs:**
+- [[Training|Phase 2 (MCMC)]] — produces the posterior chain consumed here
+- [[Steps_for_sampling_parameters|Sampler walkthrough]] — explains the Monte Carlo averaging that powers this step
+
 ```
 Function Predict(X_test, chain, X_train, y_train):
     Test_Dist = Pairwise_Euclidean_Distances(X_test, X_train)

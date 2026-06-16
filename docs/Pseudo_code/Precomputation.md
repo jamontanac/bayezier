@@ -6,6 +6,10 @@
 **Output:** `Count_Tensor` — shape `[n_train, n_candidates, n_classes]` — the k-NN class counts at each candidate k for each point.
 **Why separate:** The counts depend only on fixed training data, not on β or the current k. Precomputing avoids O(n² log n) per iteration.
 
+**Related docs:**
+- [[Training|Phase 2 (MCMC)]] — consumes `Count_Tensor` during the Gibbs step over k
+- [[Steps_for_sampling_parameters|Sampler walkthrough]] — explains why precomputation makes the Gibbs step efficient
+
 ```
 # Preconditions (must be validated by the caller):
 #   k_candidate_values is sorted ascending

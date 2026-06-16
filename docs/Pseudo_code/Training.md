@@ -6,6 +6,12 @@
 **Output:** `chain` — list of (β, k) pairs after burn-in and thinning.
 **Structure:** One iteration = Gibbs over k (exhaustive softmax) → MH over β (Gaussian proposal + accept/reject).
 
+**Related docs:**
+- [[Precomputation|Phase 1 (precomputation)]] — builds the `Count_Tensor` this phase reads
+- [[Inference|Phase 3 (prediction)]] — consumes the chain this phase produces
+- [[Steps_for_sampling_parameters|Sampler walkthrough]] — detailed explanation of Gibbs, MH, and the update cycle
+- [[Technical_details_sampling_parameters|Sampling parameters]] — how to choose `n_iters`, `burn_in`, `thinning`, `proposal_width`
+
 ```
 Function Fit_Bayes_KNN(X_train, y_train, k_candidate_values, config):
     beta    = 1.0
