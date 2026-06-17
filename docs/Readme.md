@@ -49,9 +49,7 @@ p(c \mid x, \text{Data})
   \, d\beta
 $$
 
-Evaluating this directly would require setting up a numerical integration grid
-(Simpson's rule, Gaussian quadrature) for every candidate $k$ and every test point —
-computationally prohibitive.
+Evaluating this directly would require setting up a numerical integration grid (Simpson's rule, Gaussian quadrature) for every candidate $k$ and every test point.
 
 ### The Monte Carlo approximation
 
@@ -62,10 +60,7 @@ $$
 \approx \frac{1}{S} \sum_{s=1}^{S} p\!\left(c \mid x,\, k^{(s)},\, \beta^{(s)}\right)
 $$
 
-where $\bigl(k^{(s)}, \beta^{(s)}\bigr)$ are the parameter draws collected by the
-sampler during training.
-Instead of solving a calculus problem, we replace the integral with a plain average
-over saved history — basic array addition and division.
+where $\bigl(k^{(s)}, \beta^{(s)}\bigr)$ are the parameter draws collected by the sampler during training. Instead of solving a calculus problem, we replace the integral with a plain average over saved history — basic array addition and division.
 
 ### Concept mapping: math to code
 
@@ -78,13 +73,6 @@ over saved history — basic array addition and division.
 
 ### Why this saves time
 
-The MCMC loop in `fit_bayesknn` acts as an **importance filter** on the parameter space.
-It spends its iterations walking through $(k, \beta)$ pairs, discovering which
-configurations are actually plausible given the training data.
+The MCMC loop in `fit_bayesknn` acts as an **importance filter** on the parameter space. It spends its iterations walking through $(k, \beta)$ pairs, discovering which configurations are actually plausible given the training data.
 
-If a configuration like $k = 19, \beta = 0.2$ is highly implausible, the chain will
-simply never visit it.
-When `predict_bayesknn` runs, CPU cycles are spent only at the specific, high-probability
-parameter coordinates that the sampler saved — not uniformly across all of
-$\{1, \dots, k_{\max}\} \times [0, \infty)$.
-This turns an otherwise intractable integral into a loop over a few hundred saved draws.
+If a configuration like $k = 19, \beta = 0.2$ is highly implausible, the chain will simply never visit it. When `predict_bayesknn` runs, CPU cycles are spent only at the specific, high-probability parameter coordinates that the sampler saved — not uniformly across all of $\{1, \dots, k_{\max}\} \times [0, \infty)$. This turns an otherwise intractable integral into a loop over a few hundred saved draws.
