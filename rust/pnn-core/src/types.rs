@@ -190,3 +190,268 @@ impl PnnModel {
         self.x_train.first().map_or(0, Vec::len)
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    fn three_point_model() -> PnnModel {
+        PnnModel::new(
+            vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]],
+            vec![0, 1, 0],
+            2,
+            vec![1, 2],
+        )
+        .unwrap()
+    }
+
+    // ── Happy paths ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_stores_all_fields_correctly() {
+        let m = three_point_model();
+        assert_eq!(m.n_train(), 3);
+        assert_eq!(m.n_features(), 2);
+        assert_eq!(m.n_classes, 2);
+        assert_eq!(m.k_values, vec![1, 2]);
+        assert_eq!(m.k_max(), 2);
+    }
+
+    #[test]
+    fn new_sorts_k_values_ascending() {
+        let m = PnnModel::new(
+            vec![vec![0.0]; 5],
+            vec![0, 1, 0, 1, 0],
+            2,
+            vec![3, 1, 2],
+        )
+        .unwrap();
+        assert_eq!(m.k_values, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn new_deduplicates_k_values() {
+        let m = PnnModel::new(
+            vec![vec![0.0]; 5],
+            vec![0, 1, 0, 1, 0],
+            2,
+            vec![1, 1, 2, 2, 3],
+        )
+        .unwrap();
+        assert_eq!(m.k_values, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn k_max_equals_largest_candidate() {
+        let m = PnnModel::new(
+            vec![vec![0.0]; 5],
+            vec![0, 0, 1, 1, 0],
+            2,
+            vec![1, 4], // k=4 < n_train=5: valid
+        )
+        .unwrap();
+        assert_eq!(m.k_max(), 4);
+    }
+
+    #[test]
+    fn k_equals_n_train_minus_one_is_valid() {
+        // Maximum valid k after self-exclusion is n_train - 1.
+        let n_train = 4;
+        let result = PnnModel::new(
+            vec![vec![0.0]; n_train],
+            vec![0, 1, 0, 1],
+            2,
+            vec![n_train - 1],
+        );
+        assert!(result.is_ok(), "k = n_train-1 should be valid");
+    }
+
+    // ── ModelError variants ───────────────────────────────────────────────────
+
+    #[test]
+    fn error_empty_training_data() {
+        let err = PnnModel::new(vec![], vec![], 2, vec![1]).unwrap_err();
+        assert_eq!(err, ModelError::EmptyTrainingData);
+    }
+
+    #[test]
+    fn error_empty_labels() {
+        // y_train empty is checked before length-mismatch.
+        let err = PnnModel::new(vec![vec![1.0], vec![2.0]], vec![], 2, vec![1]).unwrap_err();
+        assert_eq!(err, ModelError::EmptyLabels);
+    }
+
+    #[test]
+    fn error_length_mismatch() {
+        let err = PnnModel::new(
+            vec![vec![1.0], vec![2.0], vec![3.0]],
+            vec![0, 1],
+            2,
+            vec![1],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::LengthMismatch { n_samples: 3, n_labels: 2 });
+    }
+
+    #[test]
+    fn error_empty_feature_vector_first_row() {
+        let err = PnnModel::new(
+            vec![vec![], vec![1.0]],
+            vec![0, 1],
+            2,
+            vec![1],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::EmptyFeatureVector { row_index: 0 });
+    }
+
+    #[test]
+    fn error_empty_feature_vector_later_row() {
+        let err = PnnModel::new(
+            vec![vec![1.0], vec![]],
+            vec![0, 1],
+            2,
+            vec![1],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::EmptyFeatureVector { row_index: 1 });
+    }
+
+    #[test]
+    fn error_inconsistent_feature_dimensions() {
+        let err = PnnModel::new(
+            vec![vec![1.0, 2.0], vec![3.0]], // row 1 has 1 feature, expected 2
+            vec![0, 1],
+            2,
+            vec![1],
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            ModelError::InconsistentFeatureDimensions { expected: 2, found: 1, row_index: 1 }
+        );
+    }
+
+    #[test]
+    fn error_invalid_class_count_zero() {
+        let err = PnnModel::new(
+            vec![vec![1.0], vec![2.0]],
+            vec![0, 0],
+            0, // n_classes = 0
+            vec![1],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::InvalidClassCount { n_classes: 0 });
+    }
+
+    #[test]
+    fn error_empty_k_values() {
+        let err = PnnModel::new(
+            vec![vec![1.0], vec![2.0]],
+            vec![0, 1],
+            2,
+            vec![],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::EmptyKValues);
+    }
+
+    #[test]
+    fn error_k_value_zero() {
+        let err = PnnModel::new(
+            vec![vec![1.0], vec![2.0], vec![3.0]],
+            vec![0, 1, 0],
+            2,
+            vec![0],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::InvalidKValue { k: 0, n_train: 3 });
+    }
+
+    #[test]
+    fn error_k_equals_n_train() {
+        // After self-exclusion only n_train-1 neighbors exist; k = n_train is one too many.
+        let err = PnnModel::new(
+            vec![vec![0.0]; 3],
+            vec![0, 1, 0],
+            2,
+            vec![3], // k=3 == n_train=3
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::InvalidKValue { k: 3, n_train: 3 });
+    }
+
+    #[test]
+    fn error_k_exceeds_n_train() {
+        let err = PnnModel::new(
+            vec![vec![0.0]; 3],
+            vec![0, 1, 0],
+            2,
+            vec![5], // k=5 > n_train=3
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::InvalidKValue { k: 5, n_train: 3 });
+    }
+
+    #[test]
+    fn error_label_out_of_range() {
+        let err = PnnModel::new(
+            vec![vec![0.0]; 3],
+            vec![0, 1, 2], // label 2 >= n_classes=2
+            2,
+            vec![1, 2],
+        )
+        .unwrap_err();
+        assert_eq!(err, ModelError::LabelOutOfRange { label: 2, n_classes: 2, row_index: 2 });
+    }
+
+    // ── ModelError::Display ───────────────────────────────────────────────────
+
+    #[test]
+    fn display_empty_training_data() {
+        assert!(ModelError::EmptyTrainingData.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn display_length_mismatch_shows_both_counts() {
+        let msg = ModelError::LengthMismatch { n_samples: 5, n_labels: 3 }.to_string();
+        assert!(msg.contains('5') && msg.contains('3'));
+    }
+
+    #[test]
+    fn display_invalid_k_value_shows_k_and_n_train() {
+        let msg = ModelError::InvalidKValue { k: 7, n_train: 4 }.to_string();
+        assert!(msg.contains('7') && msg.contains('4'));
+    }
+
+    #[test]
+    fn display_label_out_of_range_shows_label() {
+        let msg = ModelError::LabelOutOfRange { label: 9, n_classes: 3, row_index: 0 }.to_string();
+        assert!(msg.contains('9'));
+    }
+
+    // ── SamplerConfig::default ────────────────────────────────────────────────
+
+    #[test]
+    fn sampler_config_default_uses_hybrid_method() {
+        assert_eq!(SamplerConfig::default().method, InferenceMethod::Hybrid);
+    }
+
+    #[test]
+    fn sampler_config_default_has_positive_parameters() {
+        let cfg = SamplerConfig::default();
+        assert!(cfg.n_samples > 0);
+        assert!(cfg.thinning >= 1);
+        assert!(cfg.beta_step > 0.0);
+        assert!(cfg.beta_sigma > 0.0);
+    }
+
+    #[test]
+    fn sampler_config_default_seed_is_none() {
+        assert_eq!(SamplerConfig::default().seed, None);
+    }
+}
