@@ -196,6 +196,7 @@ where
     let mut implementation = String::from("rust");
     let mut k_single: Option<usize> = None;
     let mut k_values_explicit: Option<Vec<usize>> = None;
+    let mut k_range_explicit: Option<Vec<usize>> = None;
     let mut n_samples = 1000usize;
     let mut burn_in = 500usize;
     let mut seed: Option<u64> = None;
@@ -266,6 +267,39 @@ where
                 k_values_explicit = Some(vals);
                 idx += 2;
             }
+            "--k-range" => {
+                let raw = string_value("--k-range", next)?;
+                let parts: Vec<&str> = raw.splitn(2, ',').collect();
+                if parts.len() != 2 {
+                    return Err(CliError::Message(
+                        "invalid value for --k-range: expected start,end (e.g. 2,40)".to_string(),
+                    ));
+                }
+                let start = parts[0].trim().parse::<usize>().map_err(|_| {
+                    CliError::Message(format!(
+                        "invalid start in --k-range: '{}' (expected positive integer)",
+                        parts[0].trim()
+                    ))
+                })?;
+                let end = parts[1].trim().parse::<usize>().map_err(|_| {
+                    CliError::Message(format!(
+                        "invalid end in --k-range: '{}' (expected positive integer)",
+                        parts[1].trim()
+                    ))
+                })?;
+                if start == 0 {
+                    return Err(CliError::Message(
+                        "invalid value for --k-range: start must be >= 1".to_string(),
+                    ));
+                }
+                if end < start {
+                    return Err(CliError::Message(format!(
+                        "invalid value for --k-range: end ({end}) must be >= start ({start})"
+                    )));
+                }
+                k_range_explicit = Some((start..=end).collect());
+                idx += 2;
+            }
             "--n-samples" => {
                 let raw = string_value("--n-samples", next)?;
                 n_samples = raw.parse::<usize>().map_err(|_| {
@@ -318,8 +352,10 @@ where
     let output =
         output.ok_or_else(|| CliError::Message(format!("missing required --out\n{}", usage())))?;
 
-    // --k-values takes precedence; fall back to --k (single candidate); default to [3].
-    let k_values = k_values_explicit.unwrap_or_else(|| vec![k_single.unwrap_or(3)]);
+    // Precedence: --k-values > --k-range > --k > default [3].
+    let k_values = k_values_explicit
+        .or(k_range_explicit)
+        .unwrap_or_else(|| vec![k_single.unwrap_or(3)]);
 
     Ok(Config { train, test, output, dataset, implementation, k_values, n_samples, burn_in, seed })
 }
@@ -337,7 +373,7 @@ fn usage() -> String {
     String::from(
         "Usage: pnn-cli --train <path> --test <path> --out <path> \
         [--dataset <name>] [--implementation <str>] \
-        [--k <int>] [--k-values <int,int,...>] \
+        [--k <int>] [--k-values <int,int,...>] [--k-range <start,end>] \
         [--n-samples <int>] [--burn-in <int>] [--seed <int>]",
     )
 }
