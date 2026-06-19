@@ -21,3 +21,7 @@ out/
 # macOS
 .DS_Store
 data/PRNN
+
+#local data
+data/*.csv
+data/*.json
