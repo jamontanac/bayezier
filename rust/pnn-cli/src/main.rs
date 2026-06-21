@@ -1,5 +1,8 @@
 use csv::StringRecord;
-use pnn_core::{argmax, predict_proba, sample_posterior, ModelError, PnnModel, SamplerConfig};
+use pnn_core::{
+    argmax, build_diagnostics, predict_proba, sample_posterior, InferenceMethod, ModelError,
+    PnnModel, SamplerConfig, SamplerResult,
+};
 use serde::Serialize;
 use std::env;
 use std::error::Error;
@@ -60,11 +63,14 @@ struct Config {
     output: PathBuf,
     dataset: String,
     implementation: String,
-    /// Candidate k values for the Gibbs step. Populated from --k-values or --k.
+    /// Candidate k values for the Gibbs step. Populated from --k-values, --k-range, or --k.
     k_values: Vec<usize>,
+    method: InferenceMethod,
     n_samples: usize,
     burn_in: usize,
+    thinning: usize,
     seed: Option<u64>,
+    diagnose: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -134,19 +140,22 @@ where
     )?;
 
     let sampler_config = SamplerConfig {
+        method: config.method,
         n_samples: config.n_samples,
         burn_in: config.burn_in,
+        thinning: config.thinning,
         seed: config.seed,
         ..SamplerConfig::default()
     };
 
-    let chain = sample_posterior(&model, &sampler_config);
+    let result: SamplerResult = sample_posterior(&model, &sampler_config);
+    let chain = &result.chain;
 
     let proba = predict_proba(
         &test.features,
         &model.x_train,
         &model.y_train,
-        &chain,
+        chain,
         n_classes,
     );
 
@@ -182,6 +191,14 @@ where
     let json = serde_json::to_string_pretty(&payload)?;
     fs::write(&config.output, json)?;
 
+    if let Some(ref diag_path) = config.diagnose {
+        let diag = build_diagnostics(&result, &sampler_config, &model.k_values);
+        if let Some(parent) = diag_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(diag_path, serde_json::to_string_pretty(&diag)?)?;
+    }
+
     Ok(())
 }
 
@@ -197,9 +214,12 @@ where
     let mut k_single: Option<usize> = None;
     let mut k_values_explicit: Option<Vec<usize>> = None;
     let mut k_range_explicit: Option<Vec<usize>> = None;
+    let mut method = InferenceMethod::Hybrid;
     let mut n_samples = 1000usize;
     let mut burn_in = 500usize;
+    let mut thinning = 1usize;
     let mut seed: Option<u64> = None;
+    let mut diagnose: Option<PathBuf> = None;
 
     let args_vec: Vec<String> = args.into_iter().collect();
     let mut idx = 0usize;
@@ -323,6 +343,33 @@ where
                 })?;
                 idx += 2;
             }
+            "--thinning" => {
+                let raw = string_value("--thinning", next)?;
+                thinning = raw.parse::<usize>().map_err(|_| {
+                    CliError::Message(format!(
+                        "invalid value for --thinning: {raw} (expected positive integer)"
+                    ))
+                })?;
+                if thinning == 0 {
+                    return Err(CliError::Message(
+                        "invalid value for --thinning: must be >= 1".to_string(),
+                    ));
+                }
+                idx += 2;
+            }
+            "--method" => {
+                let raw = string_value("--method", next)?;
+                method = match raw.as_str() {
+                    "hybrid" => InferenceMethod::Hybrid,
+                    "joint-mh" => InferenceMethod::JointMh,
+                    other => {
+                        return Err(CliError::Message(format!(
+                            "invalid value for --method: '{other}' (expected 'hybrid' or 'joint-mh')"
+                        )));
+                    }
+                };
+                idx += 2;
+            }
             "--seed" => {
                 let raw = string_value("--seed", next)?;
                 let s = raw.parse::<u64>().map_err(|_| {
@@ -331,6 +378,10 @@ where
                     ))
                 })?;
                 seed = Some(s);
+                idx += 2;
+            }
+            "--diagnose" => {
+                diagnose = Some(path_value("--diagnose", next)?);
                 idx += 2;
             }
             "--help" | "-h" => {
@@ -357,7 +408,7 @@ where
         .or(k_range_explicit)
         .unwrap_or_else(|| vec![k_single.unwrap_or(3)]);
 
-    Ok(Config { train, test, output, dataset, implementation, k_values, n_samples, burn_in, seed })
+    Ok(Config { train, test, output, dataset, implementation, k_values, method, n_samples, burn_in, thinning, seed, diagnose })
 }
 
 fn path_value(flag: &str, next: Option<String>) -> Result<PathBuf, CliError> {
@@ -374,7 +425,9 @@ fn usage() -> String {
         "Usage: pnn-cli --train <path> --test <path> --out <path> \
         [--dataset <name>] [--implementation <str>] \
         [--k <int>] [--k-values <int,int,...>] [--k-range <start,end>] \
-        [--n-samples <int>] [--burn-in <int>] [--seed <int>]",
+        [--method hybrid|joint-mh] \
+        [--n-samples <int>] [--burn-in <int>] [--thinning <int>] [--seed <int>] \
+        [--diagnose <path>]",
     )
 }
 
@@ -573,6 +626,162 @@ mod tests {
         for b in betas {
             assert!(b.as_f64().unwrap() > 0.0, "beta must be positive, got {b}");
         }
+    }
+
+    // ── --diagnose tests ──────────────────────────────────────────────────────
+
+    fn args_with_diagnose(
+        train: &std::path::Path,
+        test: &std::path::Path,
+        out: &std::path::Path,
+        diag: &std::path::Path,
+        extra: &[(&str, &str)],
+    ) -> Vec<String> {
+        let mut v = vec![
+            "--train".to_string(), train.display().to_string(),
+            "--test".to_string(),  test.display().to_string(),
+            "--out".to_string(),   out.display().to_string(),
+            "--diagnose".to_string(), diag.display().to_string(),
+            "--k-values".to_string(), "1,2".to_string(),
+            "--n-samples".to_string(), "40".to_string(),
+            "--burn-in".to_string(), "10".to_string(),
+            "--seed".to_string(), "7".to_string(),
+        ];
+        for (flag, val) in extra {
+            v.push(flag.to_string());
+            v.push(val.to_string());
+        }
+        v
+    }
+
+    #[test]
+    fn diagnose_hybrid_schema_valid() {
+        let temp = tempdir().expect("tempdir");
+        let (train, test) = toy_csvs(&temp);
+        let out = temp.path().join("out.json");
+        let diag = temp.path().join("diag.json");
+
+        run_with_args(args_with_diagnose(&train, &test, &out, &diag, &[]))
+            .expect("run_with_args");
+
+        let raw = fs::read_to_string(&diag).expect("read diag");
+        let d: Value = serde_json::from_str(&raw).expect("valid json");
+
+        // config block
+        assert_eq!(d["config"]["method"], "Hybrid");
+        assert_eq!(d["config"]["n_samples"], 40);
+        assert_eq!(d["config"]["burn_in"], 10);
+        assert_eq!(d["config"]["thinning"], 1);
+        assert_eq!(d["config"]["k_candidates"]["start"], 1);
+        assert_eq!(d["config"]["k_candidates"]["end"], 2);
+        assert_eq!(d["config"]["total_iterations"], 50); // 10 + 40*1
+
+        // acceptance
+        assert!(d["mh_acceptance"]["rate"].as_f64().unwrap() >= 0.0);
+        assert!(d["mh_acceptance"]["rate"].as_f64().unwrap() <= 1.0);
+        assert!(d["mh_acceptance"]["n_accepted"].as_u64().unwrap()
+            <= d["mh_acceptance"]["n_proposed"].as_u64().unwrap());
+
+        // beta section
+        assert_eq!(d["beta"]["trace"].as_array().unwrap().len(), 40);
+        assert!(d["beta"]["acf"][0].as_f64().unwrap() > 0.999); // lag 0 ≈ 1.0
+        assert!(d["beta"]["ess"].as_f64().unwrap() >= 1.0);
+        assert!(d["beta"]["ess"].as_f64().unwrap() <= 40.0 + 1e-9);
+
+        // k section
+        assert_eq!(d["k"]["trace"].as_array().unwrap().len(), 40);
+        let freq_sum: u64 = d["k"]["frequencies"]
+            .as_object().unwrap().values()
+            .map(|v| v.as_u64().unwrap()).sum();
+        assert_eq!(freq_sum, 40);
+
+        // burn_in: Hybrid must have beta_trace but NO k_trace
+        assert_eq!(d["burn_in"]["beta_trace"].as_array().unwrap().len(), 10);
+        assert!(d["burn_in"]["k_trace"].is_null(), "Hybrid burn_in.k_trace must be absent");
+    }
+
+    #[test]
+    fn diagnose_joint_mh_has_k_trace_in_burn_in() {
+        let temp = tempdir().expect("tempdir");
+        let (train, test) = toy_csvs(&temp);
+        let out = temp.path().join("out.json");
+        let diag = temp.path().join("diag.json");
+
+        run_with_args(args_with_diagnose(
+            &train, &test, &out, &diag,
+            &[("--method", "joint-mh")],
+        ))
+        .expect("run_with_args");
+
+        let raw = fs::read_to_string(&diag).expect("read diag");
+        let d: Value = serde_json::from_str(&raw).expect("valid json");
+
+        assert_eq!(d["config"]["method"], "JointMh");
+        // JointMh burn_in must have both beta_trace and k_trace
+        assert_eq!(d["burn_in"]["beta_trace"].as_array().unwrap().len(), 10);
+        assert_eq!(d["burn_in"]["k_trace"].as_array().unwrap().len(), 10,
+            "JointMh burn_in.k_trace must be present with length = burn_in");
+    }
+
+    #[test]
+    fn diagnose_thinning_reflected_in_config_and_trace_length() {
+        let temp = tempdir().expect("tempdir");
+        let (train, test) = toy_csvs(&temp);
+        let out = temp.path().join("out.json");
+        let diag = temp.path().join("diag.json");
+
+        run_with_args(args_with_diagnose(
+            &train, &test, &out, &diag,
+            &[("--thinning", "3")],
+        ))
+        .expect("run_with_args");
+
+        let raw = fs::read_to_string(&diag).expect("read diag");
+        let d: Value = serde_json::from_str(&raw).expect("valid json");
+
+        assert_eq!(d["config"]["thinning"], 3);
+        assert_eq!(d["config"]["total_iterations"], 10 + 40 * 3); // 130
+        // trace length is still n_samples=40 (thinning only affects iteration count)
+        assert_eq!(d["beta"]["trace"].as_array().unwrap().len(), 40);
+    }
+
+    #[test]
+    fn main_output_unchanged_when_diagnose_is_set() {
+        let temp = tempdir().expect("tempdir");
+        let (train, test) = toy_csvs(&temp);
+        let out = temp.path().join("out.json");
+        let diag = temp.path().join("diag.json");
+
+        run_with_args(args_with_diagnose(&train, &test, &out, &diag, &[]))
+            .expect("run_with_args");
+
+        // Main output must still contain the standard schema fields
+        let raw = fs::read_to_string(&out).expect("read main output");
+        let j: Value = serde_json::from_str(&raw).expect("valid json");
+        assert!(j["predictions"].is_array());
+        assert!(j["k_posterior"].is_array());
+        assert!(j["beta_posterior"].is_array());
+        assert!(j["misclassification_cost"].is_number());
+    }
+
+    #[test]
+    fn fails_on_invalid_method_value() {
+        let err = run_with_args(vec!["--method".to_string(), "foo".to_string()])
+            .expect_err("expected invalid --method value");
+        assert!(
+            err.to_string().contains("invalid value for --method"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn fails_on_zero_thinning_value() {
+        let err = run_with_args(vec!["--thinning".to_string(), "0".to_string()])
+            .expect_err("expected invalid --thinning value");
+        assert!(
+            err.to_string().contains("invalid value for --thinning: must be >= 1"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
