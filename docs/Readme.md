@@ -81,17 +81,18 @@ If a configuration like $k = 19, \beta = 0.2$ is highly implausible, the chain w
 
 ## Rust CLI
 
-All commands are run from the `rust/` workspace root. Use `cargo run -p pnn-cli --` during development or the compiled binary at `target/release/pnn-cli` after `cargo build --release`.
+All commands are run from the `rust/` workspace root using Pixi as the entrypoint. Use `pixi run cargo run -p pnn-cli --`.
 
 ### CLI argument synopsis
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train <path> --test <path> --out <path> \
   [--dataset <name>] [--implementation <str>] \
   [--k <int>] [--k-values <int,int,...>] [--k-range <start,end>] \
   [--method hybrid|joint-mh] \
   [--n-samples <int>] [--burn-in <int>] [--thinning <int>] [--seed <int>] \
+  [--beta-step <float>] [--beta-sigma <float>] \
   [--diagnose <path>]
 ```
 
@@ -123,14 +124,9 @@ Values larger than `n_train - 1` are silently clamped to `n_train - 1`.
 | `--n-samples <int>` | positive integer | `1000` | Number of draws to keep after burn-in (the posterior chain length). More samples = lower Monte Carlo variance. |
 | `--burn-in <int>` | non-negative integer | `500` | Iterations discarded before recording begins. Should be long enough for the chain to forget its starting state. Rule of thumb: 20–30 % of total iterations. |
 | `--thinning <int>` | integer `>= 1` | `1` | Keep one draw every `thinning` post-burn-in iterations. Total iterations become `burn_in + n_samples * thinning`. |
+| `--beta-step <float>` | positive float | `0.3` | Standard deviation of the Gaussian MH proposal for β. Controls how far the chain tries to jump each iteration. Target acceptance rate: 20–50 % (Hybrid) or 5–25 % (JointMh). Increase if acceptance rate is too high; decrease if too low. |
+| `--beta-sigma <float>` | positive float | `5.0` | Scale of the half-normal prior on β. Encodes prior belief about interaction strength. Larger values allow β to be bigger; smaller values pull β toward zero regardless of the data. |
 | `--seed <int>` | unsigned 64-bit integer | random | Fixed RNG seed for reproducible runs. Omit for non-deterministic output. |
-
-The sampler also uses two prior/proposal parameters that are currently fixed at their defaults and not yet exposed as flags:
-
-| Internal parameter | Default | Meaning |
-|--------------------|---------|---------|
-| `beta_step` | `0.3` | Standard deviation of the Gaussian MH proposal for β. Target acceptance rate 20–50 % (Hybrid) or 5–25 % (JointMh). |
-| `beta_sigma` | `5.0` | Scale of the half-normal prior on β. Larger values allow β to grow bigger. |
 
 ### Metadata flags
 
@@ -189,7 +185,7 @@ The `--out` file contains:
 #### Minimal run (toy dataset, sanity check)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/sample_train.csv \
   --test  ../data/sample_test.csv \
   --out   /tmp/sample_out.json \
@@ -207,7 +203,7 @@ cargo run -p pnn-cli -- \
 #### Pima diabetes (200 train / 332 test, 7 features, 2 classes)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/pima_train.csv \
   --test  ../data/pima_test.csv \
   --out   results/pima.json \
@@ -225,7 +221,7 @@ Binary classification of diabetes onset. A good first real dataset: medium-sized
 #### Synth (250 train / 1000 test, 2 features, 2 classes)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/synth_train.csv \
   --test  ../data/synth_test.csv \
   --out   results/synth.json \
@@ -243,7 +239,7 @@ Synthetic 2D dataset from Ripley (1996). The large test set (1000 points) gives 
 #### Forest glass (171 train / 43 test, 9 features, 6 classes)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/fglass_train.csv \
   --test  ../data/fglass_test.csv \
   --out   results/fglass.json \
@@ -261,7 +257,7 @@ Multi-class problem (6 glass types). Keep `k-range` small relative to training s
 #### Crabs (160 train / 40 test, 6 features, 2 classes)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/crabs_train.csv \
   --test  ../data/crabs_test.csv \
   --out   results/crabs.json \
@@ -279,7 +275,7 @@ Classify crab species (Blue vs Orange) from morphological measurements. Well-sep
 #### Viruses (48 train / 13 test, 17 features, 6 classes)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/viruses_train.csv \
   --test  ../data/viruses_test.csv \
   --out   results/viruses.json \
@@ -297,7 +293,7 @@ Small dataset (48 training points) — keep k-range small (well below 48). High-
 #### Cushing's syndrome (21 train / 6 test, 2 features, 4 classes)
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/cushings_train.csv \
   --test  ../data/cushings_test.csv \
   --out   results/cushings.json \
@@ -317,7 +313,7 @@ Very small dataset (21 training points). Use a narrow k-range. Treat results wit
 Add `--diagnose <path>` to any run to get a second JSON with MCMC diagnostics:
 
 ```bash
-cargo run -p pnn-cli -- \
+pixi run cargo run -p pnn-cli -- \
   --train ../data/pima_train.csv \
   --test  ../data/pima_test.csv \
   --out   results/pima.json \
@@ -343,10 +339,70 @@ The diagnostics file contains:
 
 **What to look for:**
 
-| Diagnostic | Healthy | Problem |
-|---|---|---|
-| `mh_acceptance.rate` | 0.20 – 0.50 | Below 0.10: `beta_step` too large. Above 0.70: `beta_step` too small. |
-| `beta.ess` | > 100 (for n_samples=1000) | Very low (< 20): high autocorrelation — increase `beta_step` or `thinning`. |
-| `beta.acf` | Drops to ~0 within 20 lags | Slow decay: chain mixing poorly for β. |
-| `k.frequencies` | Spread across multiple values | Single k dominates: try a wider `k-range`. |
-| `burn_in.beta_trace` | Stabilises well before end | Still drifting at end: increase `--burn-in`. |
+| Diagnostic | Healthy | Problem | Fix |
+|---|---|---|---|
+| `mh_acceptance.rate` | 0.20 – 0.50 (Hybrid) / 0.05 – 0.25 (JointMh) | Below 0.10: proposals too wide, chain stuck. Above 0.70: proposals too narrow, chain crawls. | Decrease or increase `--beta-step` respectively. |
+| `beta.ess` | > 100 for n_samples=1000 | Very low (< 20): successive draws are nearly identical. | Increase `--beta-step` to make bolder moves, or increase `--thinning` to space draws further apart. |
+| `beta.acf` | Drops to ~0 within 20 lags | Slow decay: β moves are tiny relative to the posterior width. | Increase `--beta-step`. |
+| `beta.mean` / `beta.max` | β > 0 with some spread | β pinned near 0 across the whole chain: prior too restrictive. | Increase `--beta-sigma` to widen the half-normal prior. |
+| `k.frequencies` | Spread across several candidates | Single k dominates (>90% of draws): either the data genuinely prefers one k, or the range is too narrow. | Try a wider `--k-range` to give the Gibbs step more room. |
+| `burn_in.beta_trace` | Stabilises well before the end of burn-in | Still drifting or jumping at the end: chain has not found the posterior yet. | Increase `--burn-in`. |
+
+### Worked tuning loop (`--beta-step`)
+
+Use this practical loop when the chain mixes poorly.
+
+#### 1) First run (diagnose only)
+
+```bash
+pixi run cargo run -p pnn-cli -- \
+  --train ../data/pima_train.csv \
+  --test  ../data/pima_test.csv \
+  --out   results/pima.json \
+  --diagnose results/pima_diag_step1.json \
+  --dataset pima \
+  --k-range 1,15 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --thinning 1 \
+  --beta-step 0.3 \
+  --beta-sigma 5.0 \
+  --seed 42
+```
+
+Read `results/pima_diag_step1.json` and check:
+- `mh_acceptance.rate`
+- `beta.ess`
+- `beta.acf`
+
+#### 2) Retune `--beta-step`, then rerun
+
+If acceptance is too low (< 0.20 for Hybrid), decrease `--beta-step`.
+If acceptance is too high (> 0.50 for Hybrid), increase `--beta-step`.
+
+Example retry with smaller proposal width:
+
+```bash
+pixi run cargo run -p pnn-cli -- \
+  --train ../data/pima_train.csv \
+  --test  ../data/pima_test.csv \
+  --out   results/pima_tuned.json \
+  --diagnose results/pima_diag_step2.json \
+  --dataset pima \
+  --k-range 1,15 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --thinning 1 \
+  --beta-step 0.15 \
+  --beta-sigma 5.0 \
+  --seed 42
+```
+
+Compare `pima_diag_step1.json` vs `pima_diag_step2.json`:
+- acceptance rate should move toward the target range
+- `beta.ess` should usually improve
+- `beta.acf` should decay faster
+
+Notes:
+- For `--method joint-mh`, target acceptance is lower (roughly 5–25%).
+- Change `--beta-sigma` only when you want to alter the prior strength on β, not proposal behavior.

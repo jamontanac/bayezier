@@ -13,11 +13,10 @@ Outputs are written alongside this script in data/ as
   cushings_train.csv / cushings_test.csv
 
 Usage:
-    python3 convert_prnn.py
+    pixi run python convert_prnn.py
 """
 
 import csv
-import io
 import os
 import random
 
