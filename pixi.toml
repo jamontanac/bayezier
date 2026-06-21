@@ -8,9 +8,9 @@ platforms = ["osx-arm64", "osx-64", "linux-64"]
 [dependencies]
 # Python interpreter
 python = ">=3.12,<3.13"
+cargo-nextest = ">=0.9"
 
 [feature.dev.dependencies]
-cargo-nextest = ">=0.9"
 cargo-insta = ">=1.43,<2"
 maturin = ">=1.5,<2.0"
 rust = ">=1.85"
@@ -19,7 +19,10 @@ uv = ">=0.10.1" # UV for maturin (maturin develop --uv)
 
 [tasks]
 rust-check = { cmd = "cargo check --workspace", cwd = "rust" }
-rust-test = { cmd = "cargo test --workspace", cwd = "rust" }
+rust-test = { cmd = "cargo nextest run --workspace", cwd = "rust" }
 rust-benchmark = { cmd = "cargo run -p pnn-cli -- --train ../data/sample_train.csv --test ../data/sample_test.csv --out ../benchmarks/out/rust.json --dataset sample --implementation rust --k 3 --beta 1.0", cwd = "rust" }
 compare = { cmd = "python benchmarks/compare.py --rust-output benchmarks/out/rust.json --baseline-output benchmarks/out/rust_baseline.json --tolerance 1e-4" }
 parity = { cmd = "pixi run rust-benchmark && python benchmarks/compare.py --rust-output benchmarks/out/rust.json --baseline-output benchmarks/out/rust_baseline.json --tolerance 1e-4" }
+
+[environments]
+dev = ["dev"]

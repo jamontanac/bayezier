@@ -76,10 +76,12 @@ pixi run parity
 
 Current CLI executable: `rust/pnn-cli`
 
+Run through Pixi so the toolchain always comes from the project environment.
+
 Example:
 
 ```bash
-cargo run -p pnn-cli --manifest-path rust/Cargo.toml -- \
+pixi run cargo run -p pnn-cli --manifest-path rust/Cargo.toml -- \
   --train data/sample_train.csv \
   --test data/sample_test.csv \
   --out benchmarks/out/rust.json \
@@ -96,7 +98,7 @@ The command writes a JSON payload compatible with `benchmarks/README.md`.
 Rust vs Zig (future main path):
 
 ```bash
-python benchmarks/compare.py \
+pixi run python benchmarks/compare.py \
   --rust-output benchmarks/out/rust.json \
   --zig-output benchmarks/out/zig.json \
   --tolerance 1e-4
@@ -105,7 +107,7 @@ python benchmarks/compare.py \
 Rust vs baseline (current Rust-first path):
 
 ```bash
-python benchmarks/compare.py \
+pixi run python benchmarks/compare.py \
   --rust-output benchmarks/out/rust.json \
   --baseline-output benchmarks/out/rust_baseline.json \
   --tolerance 1e-4
