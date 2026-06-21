@@ -463,6 +463,28 @@ fn run_pipeline(config: &RunConfig) -> Result<BenchmarkOutput, BindingError> {
     )
 }
 
+/// Runs the Bayesian k-NN sampler directly from CSV data files.
+///
+/// Parameters:
+///   train_path (str): Path to the training CSV file.
+///   test_path (str): Path to the test CSV file.
+///   dataset (str, optional): Metadata label for the dataset name. Default: "unknown".
+///   implementation (str, optional): Metadata label for the implementation. Default: "rust".
+///   k (int, optional): Single k candidate value. Default: None.
+///   k_values (list of int, optional): Explicit list of positive k candidates. Default: None.
+///   k_range (tuple of (int, int), optional): Inclusive range of k candidates. Default: None.
+///   method (str, optional): Sampler method ('hybrid' or 'joint-mh'). Default: "hybrid".
+///   n_samples (int, optional): Number of post-burn-in samples to collect. Default: 1000.
+///   burn_in (int, optional): Number of burn-in iterations to discard. Default: 500.
+///   thinning (int, optional): Keep one draw every `thinning` iterations. Default: 1.
+///   beta_step (float, optional): Proposal step size for β. Default: 0.3.
+///   beta_sigma (float, optional): Prior standard deviation for β. Default: 5.0.
+///   seed (int, optional): Random seed for reproducibility. Default: None.
+///   out_path (str, optional): Filepath to write the benchmark JSON output. Default: None.
+///   diagnose_path (str, optional): Filepath to write the MCMC diagnostics JSON. Default: None.
+///
+/// Returns:
+///   dict: Benchmark payload dictionary matching the output schema.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     train_path,
@@ -521,10 +543,34 @@ fn run_from_csv(
     )
     .map_err(to_py_err)?;
 
-    let payload = run_pipeline(&config).map_err(to_py_err)?;
+    let payload = py.allow_threads(|| run_pipeline(&config)).map_err(to_py_err)?;
     payload_to_py(py, &payload)
 }
 
+/// Runs the Bayesian k-NN sampler directly on in-memory sequences or NumPy arrays.
+///
+/// Parameters:
+///   x_train (list/array): 2D training features.
+///   y_train (list/array): 1D training class labels (non-negative integers).
+///   x_test (list/array): 2D test features.
+///   y_test (list/array, optional): 1D test class labels. Default: None.
+///   dataset (str, optional): Metadata label for the dataset name. Default: "unknown".
+///   implementation (str, optional): Metadata label for the implementation. Default: "rust".
+///   k (int, optional): Single k candidate value. Default: None.
+///   k_values (list of int, optional): Explicit list of positive k candidates. Default: None.
+///   k_range (tuple of (int, int), optional): Inclusive range of k candidates. Default: None.
+///   method (str, optional): Sampler method ('hybrid' or 'joint-mh'). Default: "hybrid".
+///   n_samples (int, optional): Number of post-burn-in samples to collect. Default: 1000.
+///   burn_in (int, optional): Number of burn-in iterations to discard. Default: 500.
+///   thinning (int, optional): Keep one draw every `thinning` iterations. Default: 1.
+///   beta_step (float, optional): Proposal step size for β. Default: 0.3.
+///   beta_sigma (float, optional): Prior standard deviation for β. Default: 5.0.
+///   seed (int, optional): Random seed for reproducibility. Default: None.
+///   out_path (str, optional): Filepath to write the benchmark JSON output. Default: None.
+///   diagnose_path (str, optional): Filepath to write the MCMC diagnostics JSON. Default: None.
+///
+/// Returns:
+///   dict: Benchmark payload dictionary matching the output schema.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     x_train,
@@ -593,14 +639,17 @@ fn run_from_arrays(
         .transpose()
         .map_err(to_py_err)?;
 
-    let payload = run_model(
-        &config,
-        train_features,
-        train_labels,
-        test_features,
-        test_labels,
-    )
-    .map_err(to_py_err)?;
+    let payload = py
+        .allow_threads(|| {
+            run_model(
+                &config,
+                train_features,
+                train_labels,
+                test_features,
+                test_labels,
+            )
+        })
+        .map_err(to_py_err)?;
 
     payload_to_py(py, &payload)
 }
