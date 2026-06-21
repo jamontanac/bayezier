@@ -5,6 +5,7 @@ In this document i try to explain *why* each piece of the implementation is desi
 **Related docs:**
 - [[Steps_for_sampling_parameters|Step-by-step sampler walkthrough]] — the Gibbs and MH mechanics with numerical examples
 - [[Technical_details_sampling_parameters|Sampling parameters reference]] — how to choose `n_iters`, `burn_in`, `thinning`, `proposal_width`, `beta_sigma`
+- [[python_binding|Python Binding & Compilation Reference]] ([python_binding.md](file:///Users/jmontana/Documents/bayezier/docs/python_binding.md)) — how to compile and run the high-performance pipeline directly from Python
 - **Pseudocode:** [[Precomputation|Phase 1 (precomputation)]], [[Training|Phase 2 (MCMC)]], [[Inference|Phase 3 (prediction)]]
 
 ---
@@ -406,3 +407,16 @@ Compare `pima_diag_step1.json` vs `pima_diag_step2.json`:
 Notes:
 - For `--method joint-mh`, target acceptance is lower (roughly 5–25%).
 - Change `--beta-sigma` only when you want to alter the prior strength on β, not proposal behavior.
+
+---
+
+## Python Bindings
+
+A high-performance Python binding module `pnn_py` is implemented under [rust/pnn-py/](file:///Users/jmontana/Documents/bayezier/rust/pnn-py/) using PyO3 and built/installed with Maturin.
+
+### Key Capabilities
+- **Direct in-memory array integration**: Pass training and test datasets directly as Python sequences or NumPy arrays via `run_from_arrays(...)`, completely bypassing disk I/O.
+- **CSV parity workflow**: Execute inferences directly from CSV data files via `run_from_csv(...)`, matching all validation and execution semantics of the Rust CLI.
+- **Diagnostics export**: Output detailed MCMC diagnostics JSON (MCMC trace logs, autocorrelation plots, effective sample size, and acceptance rates) directly to a target filepath.
+
+To learn more about compiling, installing, configuring and using the Python binding, see [[python_binding|Python Binding & Compilation Reference]] ([python_binding.md](file:///Users/jmontana/Documents/bayezier/docs/python_binding.md)).
