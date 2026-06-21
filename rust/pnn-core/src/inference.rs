@@ -4,7 +4,7 @@ use rand_distr::{Distribution, Normal};
 
 use crate::model::{log_joint, log_sum_exp};
 use crate::precompute::build_count_tensor;
-use crate::types::{CountTensor, InferenceMethod, PnnModel, PosteriorDraw, SamplerConfig};
+use crate::types::{CountTensor, InferenceMethod, PnnModel, PosteriorDraw, SamplerConfig, SamplerResult};
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -45,19 +45,21 @@ fn run_hybrid(
     model: &PnnModel,
     count_tensor: &CountTensor,
     config: &SamplerConfig,
-) -> Vec<PosteriorDraw> {
+) -> SamplerResult {
     debug_assert!(config.thinning > 0, "thinning must be >= 1");
 
     let mut rng = make_rng(config.seed);
     let n_candidates = model.k_values.len();
-    let n_iters = config.burn_in + config.n_samples * config.thinning;
+    let total_iters = config.burn_in + config.n_samples * config.thinning;
     let normal = Normal::new(0.0_f64, config.beta_step).expect("beta_step must be > 0");
 
     let mut beta = 1.0_f64;
     let mut k_index = n_candidates / 2; // start at median candidate
     let mut chain = Vec::with_capacity(config.n_samples);
+    let mut burn_in_chain = Vec::with_capacity(config.burn_in);
+    let mut n_accepted = 0usize;
 
-    for step in 0..n_iters {
+    for step in 0..total_iters {
         // --- Gibbs step: sample k from its exact full conditional ---
         let log_w: Vec<f64> = (0..n_candidates)
             .map(|ki| {
@@ -96,21 +98,27 @@ fn run_hybrid(
             // log(U) < log_alpha  ⟺  U < exp(log_alpha)  ⟺  accept
             if rng.r#gen::<f64>().ln() < log_alpha {
                 beta = beta_prop;
+                true
+            } else {
+                false
             }
-        }
-        // beta_prop <= 0: half-normal prior gives -∞, so we always reject.
+        } else {
+            false // beta_prop <= 0: half-normal prior gives -∞, always reject
+        };
 
-        // --- Record post-burn-in, every `thinning` steps ---
-        if step >= config.burn_in && (step - config.burn_in) % config.thinning == 0 {
-            chain.push(PosteriorDraw {
-                k_index,
-                k: model.k_values[k_index],
-                beta,
-            });
+        if step < config.burn_in {
+            burn_in_chain.push(PosteriorDraw { k_index, k: model.k_values[k_index], beta });
+        } else {
+            if accepted {
+                n_accepted += 1;
+            }
+            if (step - config.burn_in) % config.thinning == 0 {
+                chain.push(PosteriorDraw { k_index, k: model.k_values[k_index], beta });
+            }
         }
     }
 
-    chain
+    SamplerResult { chain, burn_in_chain, n_accepted, total_iters }
 }
 
 // ── JointMh sampler ───────────────────────────────────────────────────────────
@@ -136,24 +144,26 @@ fn run_joint_mh(
     model: &PnnModel,
     count_tensor: &CountTensor,
     config: &SamplerConfig,
-) -> Vec<PosteriorDraw> {
+) -> SamplerResult {
     debug_assert!(config.thinning > 0, "thinning must be >= 1");
 
     let mut rng = make_rng(config.seed);
     let n_candidates = model.k_values.len();
-    let n_iters = config.burn_in + config.n_samples * config.thinning;
+    let total_iters = config.burn_in + config.n_samples * config.thinning;
     let normal = Normal::new(0.0_f64, config.beta_step).expect("beta_step must be > 0");
 
     let mut beta = 1.0_f64;
     let mut k_index = n_candidates / 2;
     let mut chain = Vec::with_capacity(config.n_samples);
+    let mut burn_in_chain = Vec::with_capacity(config.burn_in);
+    let mut n_accepted = 0usize;
 
-    for step in 0..n_iters {
+    for step in 0..total_iters {
         // --- Joint proposal ---
         let k_prop = rng.gen_range(0..n_candidates);
         let beta_prop = beta + normal.sample(&mut rng);
 
-        if beta_prop > 0.0 {
+        let accepted = if beta_prop > 0.0 {
             let log_alpha = log_joint(
                 count_tensor,
                 &model.y_train,
@@ -172,24 +182,32 @@ fn run_joint_mh(
             if rng.r#gen::<f64>().ln() < log_alpha {
                 k_index = k_prop;
                 beta = beta_prop;
+                true
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
 
-        if step >= config.burn_in && (step - config.burn_in) % config.thinning == 0 {
-            chain.push(PosteriorDraw {
-                k_index,
-                k: model.k_values[k_index],
-                beta,
-            });
+        if step < config.burn_in {
+            burn_in_chain.push(PosteriorDraw { k_index, k: model.k_values[k_index], beta });
+        } else {
+            if accepted {
+                n_accepted += 1;
+            }
+            if (step - config.burn_in) % config.thinning == 0 {
+                chain.push(PosteriorDraw { k_index, k: model.k_values[k_index], beta });
+            }
         }
     }
 
-    chain
+    SamplerResult { chain, burn_in_chain, n_accepted, total_iters }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-pub fn sample_posterior(model: &PnnModel, config: &SamplerConfig) -> Vec<PosteriorDraw> {
+pub fn sample_posterior(model: &PnnModel, config: &SamplerConfig) -> SamplerResult {
     let count_tensor = build_count_tensor(model);
     match config.method {
         InferenceMethod::Hybrid => run_hybrid(model, &count_tensor, config),
@@ -237,13 +255,13 @@ mod tests {
 
     #[test]
     fn hybrid_chain_length_equals_n_samples() {
-        assert_eq!(sample_posterior(&toy_model(), &seeded(InferenceMethod::Hybrid)).len(), 50);
+        assert_eq!(sample_posterior(&toy_model(), &seeded(InferenceMethod::Hybrid)).chain.len(), 50);
     }
 
     #[test]
     fn joint_mh_chain_length_equals_n_samples() {
         assert_eq!(
-            sample_posterior(&toy_model(), &seeded(InferenceMethod::JointMh)).len(),
+            sample_posterior(&toy_model(), &seeded(InferenceMethod::JointMh)).chain.len(),
             50
         );
     }
@@ -257,13 +275,71 @@ mod tests {
             seed: Some(1),
             ..seeded(InferenceMethod::Hybrid)
         };
-        assert_eq!(sample_posterior(&toy_model(), &config).len(), 7);
+        assert_eq!(sample_posterior(&toy_model(), &config).chain.len(), 7);
     }
 
     #[test]
     fn zero_n_samples_returns_empty_chain() {
         let config = SamplerConfig { n_samples: 0, ..seeded(InferenceMethod::Hybrid) };
-        assert!(sample_posterior(&toy_model(), &config).is_empty());
+        assert!(sample_posterior(&toy_model(), &config).chain.is_empty());
+    }
+
+    // --- burn-in chain ----------------------------------------------------------
+
+    #[test]
+    fn burn_in_chain_length_equals_burn_in() {
+        for method in [InferenceMethod::Hybrid, InferenceMethod::JointMh] {
+            let result = sample_posterior(&toy_model(), &seeded(method));
+            assert_eq!(
+                result.burn_in_chain.len(),
+                10,
+                "{method:?}: expected burn_in_chain.len() == 10"
+            );
+        }
+    }
+
+    #[test]
+    fn burn_in_chain_has_no_thinning() {
+        // With thinning=4, post-burn-in we get 7 draws. But burn_in_chain
+        // always records every single burn-in iteration — length == burn_in.
+        let config = SamplerConfig {
+            n_samples: 7,
+            burn_in: 5,
+            thinning: 4,
+            seed: Some(1),
+            ..seeded(InferenceMethod::Hybrid)
+        };
+        let result = sample_posterior(&toy_model(), &config);
+        assert_eq!(result.burn_in_chain.len(), 5);
+    }
+
+    // --- acceptance counter -----------------------------------------------------
+
+    #[test]
+    fn n_accepted_does_not_exceed_n_samples() {
+        for method in [InferenceMethod::Hybrid, InferenceMethod::JointMh] {
+            let config = SamplerConfig { n_samples: 100, burn_in: 20, ..seeded(method) };
+            let result = sample_posterior(&toy_model(), &config);
+            assert!(
+                result.n_accepted <= config.n_samples,
+                "{method:?}: n_accepted {} > n_samples {}",
+                result.n_accepted,
+                config.n_samples
+            );
+        }
+    }
+
+    #[test]
+    fn total_iters_equals_burn_in_plus_samples_times_thinning() {
+        let config = SamplerConfig {
+            n_samples: 7,
+            burn_in: 5,
+            thinning: 3,
+            seed: Some(1),
+            ..seeded(InferenceMethod::Hybrid)
+        };
+        let result = sample_posterior(&toy_model(), &config);
+        assert_eq!(result.total_iters, 5 + 7 * 3);
     }
 
     // --- draw validity ----------------------------------------------------------
@@ -271,7 +347,7 @@ mod tests {
     #[test]
     fn all_beta_values_are_positive() {
         for method in [InferenceMethod::Hybrid, InferenceMethod::JointMh] {
-            let chain = sample_posterior(&toy_model(), &seeded(method));
+            let chain = sample_posterior(&toy_model(), &seeded(method)).chain;
             assert!(chain.iter().all(|d| d.beta > 0.0), "{method:?}: beta <= 0 found");
         }
     }
@@ -280,7 +356,7 @@ mod tests {
     fn all_k_index_and_k_are_consistent() {
         let model = toy_model();
         for method in [InferenceMethod::Hybrid, InferenceMethod::JointMh] {
-            let chain = sample_posterior(&model, &seeded(method));
+            let chain = sample_posterior(&model, &seeded(method)).chain;
             for draw in &chain {
                 assert!(
                     draw.k_index < model.k_values.len(),
@@ -303,8 +379,8 @@ mod tests {
     fn hybrid_fixed_seed_is_reproducible() {
         let model = toy_model();
         let config = seeded(InferenceMethod::Hybrid);
-        let a = sample_posterior(&model, &config);
-        let b = sample_posterior(&model, &config);
+        let a = sample_posterior(&model, &config).chain;
+        let b = sample_posterior(&model, &config).chain;
         assert_eq!(a.len(), b.len());
         for (x, y) in a.iter().zip(b.iter()) {
             assert_eq!(x.k_index, y.k_index);
@@ -316,8 +392,8 @@ mod tests {
     fn joint_mh_fixed_seed_is_reproducible() {
         let model = toy_model();
         let config = seeded(InferenceMethod::JointMh);
-        let a = sample_posterior(&model, &config);
-        let b = sample_posterior(&model, &config);
+        let a = sample_posterior(&model, &config).chain;
+        let b = sample_posterior(&model, &config).chain;
         for (x, y) in a.iter().zip(b.iter()) {
             assert_eq!(x.k_index, y.k_index);
             assert!((x.beta - y.beta).abs() < 1e-15);
@@ -335,7 +411,7 @@ mod tests {
             burn_in: 100,
             ..seeded(InferenceMethod::Hybrid)
         };
-        let chain = sample_posterior(&toy_model(), &config);
+        let chain = sample_posterior(&toy_model(), &config).chain;
         let first = chain[0].beta;
         assert!(
             chain.iter().any(|d| (d.beta - first).abs() > 1e-9),
