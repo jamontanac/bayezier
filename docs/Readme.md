@@ -76,3 +76,277 @@ where $\bigl(k^{(s)}, \beta^{(s)}\bigr)$ are the parameter draws collected by th
 The MCMC loop in `fit_bayesknn` acts as an **importance filter** on the parameter space. It spends its iterations walking through $(k, \beta)$ pairs, discovering which configurations are actually plausible given the training data.
 
 If a configuration like $k = 19, \beta = 0.2$ is highly implausible, the chain will simply never visit it. When `predict_bayesknn` runs, CPU cycles are spent only at the specific, high-probability parameter coordinates that the sampler saved — not uniformly across all of $\{1, \dots, k_{\max}\} \times [0, \infty)$. This turns an otherwise intractable integral into a loop over a few hundred saved draws.
+
+---
+
+## Rust CLI
+
+All commands are run from the `rust/` workspace root. Use `cargo run -p pnn-cli --` during development or the compiled binary at `target/release/pnn-cli` after `cargo build --release`.
+
+### CLI argument synopsis
+
+```bash
+cargo run -p pnn-cli -- \
+  --train <path> --test <path> --out <path> \
+  [--dataset <name>] [--implementation <str>] \
+  [--k <int>] [--k-values <int,int,...>] [--k-range <start,end>] \
+  [--method hybrid|joint-mh] \
+  [--n-samples <int>] [--burn-in <int>] [--thinning <int>] [--seed <int>] \
+  [--diagnose <path>]
+```
+
+### Required flags
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--train <path>` | path | CSV file with labelled training data. Must have a header; last column must be named `label` with integer class ids starting at 0. |
+| `--test <path>` | path | CSV file with test data. Same format as train. Labels are used only to compute `misclassification_cost`. |
+| `--out <path>` | path | Where to write the output JSON. Parent directories are created automatically. |
+
+### K-candidate flags (mutually exclusive — highest priority wins)
+
+| Flag | Example | Description |
+|------|---------|-------------|
+| `--k-range <start,end>` | `--k-range 1,20` | Candidate set is every integer from `start` to `end` inclusive. Recommended for most experiments. |
+| `--k-values <int,...>` | `--k-values 1,3,5,7` | Explicit comma-separated list of k candidates. Useful when you want a non-contiguous or sparse set. |
+| `--k <int>` | `--k 5` | Single k candidate (degenerates to a one-point Gibbs step; beta is still inferred). Default: `3`. |
+
+Precedence: `--k-values` > `--k-range` > `--k`.
+
+Values larger than `n_train - 1` are silently clamped to `n_train - 1`.
+
+### MCMC tuning flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--method <hybrid\|joint-mh>` | enum | `hybrid` | Sampler update rule. `hybrid` = Gibbs over k + MH over beta. `joint-mh` = one MH proposal over `(k, beta)` accepted/rejected jointly. |
+| `--n-samples <int>` | positive integer | `1000` | Number of draws to keep after burn-in (the posterior chain length). More samples = lower Monte Carlo variance. |
+| `--burn-in <int>` | non-negative integer | `500` | Iterations discarded before recording begins. Should be long enough for the chain to forget its starting state. Rule of thumb: 20–30 % of total iterations. |
+| `--thinning <int>` | integer `>= 1` | `1` | Keep one draw every `thinning` post-burn-in iterations. Total iterations become `burn_in + n_samples * thinning`. |
+| `--seed <int>` | unsigned 64-bit integer | random | Fixed RNG seed for reproducible runs. Omit for non-deterministic output. |
+
+The sampler also uses two prior/proposal parameters that are currently fixed at their defaults and not yet exposed as flags:
+
+| Internal parameter | Default | Meaning |
+|--------------------|---------|---------|
+| `beta_step` | `0.3` | Standard deviation of the Gaussian MH proposal for β. Target acceptance rate 20–50 % (Hybrid) or 5–25 % (JointMh). |
+| `beta_sigma` | `5.0` | Scale of the half-normal prior on β. Larger values allow β to grow bigger. |
+
+### Metadata flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dataset <name>` | string | `"unknown"` | Label written into the output JSON for identification. |
+| `--implementation <str>` | string | `"rust"` | Implementation tag in the output JSON. |
+
+### Diagnostics flag
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--diagnose <path>` | path | Write a second JSON file with MCMC health diagnostics: trace plots, autocorrelation, effective sample size (ESS), MH acceptance rate, and burn-in traces. Does not affect the main `--out` output. |
+
+### Flag-specific options and validation
+
+| Flag | Valid options / constraints |
+|------|-----------------------------|
+| `--method` | `hybrid` or `joint-mh` only. Any other value is rejected. |
+| `--thinning` | Must be an integer `>= 1`. `0` is rejected. |
+| `--k` | Must be integer `>= 1`. |
+| `--k-values` | Comma-separated integers, each `>= 1`. |
+| `--k-range` | `start,end` with `start >= 1` and `end >= start`. |
+| `--n-samples` | Must be integer `>= 1`. |
+| `--burn-in` | Must be a non-negative integer. |
+| `--seed` | Must be a non-negative integer (`u64`). |
+
+---
+
+### Output JSON fields
+
+The `--out` file contains:
+
+```json
+{
+  "implementation": "rust",
+  "dataset": "pima",
+  "predictions": [
+    { "index": 0, "probabilities": [0.72, 0.28], "predicted_class": 0 },
+    ...
+  ],
+  "k_posterior": [7, 9, 7, 12, ...],
+  "beta_posterior": [1.83, 1.91, 1.78, ...],
+  "misclassification_cost": 0.211,
+  "runtime_ms": 48.3
+}
+```
+
+- `k_posterior` / `beta_posterior` — the full posterior chain (length = `n_samples`). Use these to inspect what the model learned about k and β.
+- `misclassification_cost` — fraction of test points misclassified (0 = perfect, 1 = all wrong).
+
+---
+
+### Example commands
+
+#### Minimal run (toy dataset, sanity check)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/sample_train.csv \
+  --test  ../data/sample_test.csv \
+  --out   /tmp/sample_out.json \
+  --dataset sample \
+  --k-range 1,3 \
+  --n-samples 200 \
+  --burn-in 50 \
+  --seed 42
+```
+
+5 training points, 3 test points, 2 classes. Runs in milliseconds. Good for verifying the pipeline works before running larger experiments.
+
+---
+
+#### Pima diabetes (200 train / 332 test, 7 features, 2 classes)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/pima_train.csv \
+  --test  ../data/pima_test.csv \
+  --out   results/pima.json \
+  --dataset pima \
+  --k-range 1,15 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --seed 42
+```
+
+Binary classification of diabetes onset. A good first real dataset: medium-sized, 2 classes, clean features.
+
+---
+
+#### Synth (250 train / 1000 test, 2 features, 2 classes)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/synth_train.csv \
+  --test  ../data/synth_test.csv \
+  --out   results/synth.json \
+  --dataset synth \
+  --k-range 1,20 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --seed 42
+```
+
+Synthetic 2D dataset from Ripley (1996). The large test set (1000 points) gives a stable misclassification estimate. Useful for checking that the posterior concentrates on sensible k values.
+
+---
+
+#### Forest glass (171 train / 43 test, 9 features, 6 classes)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/fglass_train.csv \
+  --test  ../data/fglass_test.csv \
+  --out   results/fglass.json \
+  --dataset fglass \
+  --k-range 1,10 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --seed 42
+```
+
+Multi-class problem (6 glass types). Keep `k-range` small relative to training set size (171 points). Expect higher misclassification cost than binary problems.
+
+---
+
+#### Crabs (160 train / 40 test, 6 features, 2 classes)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/crabs_train.csv \
+  --test  ../data/crabs_test.csv \
+  --out   results/crabs.json \
+  --dataset crabs \
+  --k-range 1,20 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --seed 42
+```
+
+Classify crab species (Blue vs Orange) from morphological measurements. Well-separated classes — expect low misclassification cost and the chain concentrating on small k.
+
+---
+
+#### Viruses (48 train / 13 test, 17 features, 6 classes)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/viruses_train.csv \
+  --test  ../data/viruses_test.csv \
+  --out   results/viruses.json \
+  --dataset viruses \
+  --k-range 1,5 \
+  --n-samples 1000 \
+  --burn-in 300 \
+  --seed 42
+```
+
+Small dataset (48 training points) — keep k-range small (well below 48). High-dimensional features (17) relative to training set size.
+
+---
+
+#### Cushing's syndrome (21 train / 6 test, 2 features, 4 classes)
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/cushings_train.csv \
+  --test  ../data/cushings_test.csv \
+  --out   results/cushings.json \
+  --dataset cushings \
+  --k-range 1,5 \
+  --n-samples 1000 \
+  --burn-in 200 \
+  --seed 42
+```
+
+Very small dataset (21 training points). Use a narrow k-range. Treat results with caution given the limited test set size (6 points).
+
+---
+
+### Using `--diagnose` to check chain health
+
+Add `--diagnose <path>` to any run to get a second JSON with MCMC diagnostics:
+
+```bash
+cargo run -p pnn-cli -- \
+  --train ../data/pima_train.csv \
+  --test  ../data/pima_test.csv \
+  --out   results/pima.json \
+  --diagnose results/pima_diag.json \
+  --dataset pima \
+  --k-range 1,15 \
+  --n-samples 2000 \
+  --burn-in 500 \
+  --seed 42
+```
+
+The diagnostics file contains:
+
+```json
+{
+  "config": { "method": "Hybrid", "k_candidates": {"start": 1, "end": 15}, ... },
+  "mh_acceptance": { "n_accepted": 980, "n_proposed": 2000, "rate": 0.49 },
+  "beta":  { "trace": [...], "mean": 1.9, "std": 0.4, "acf": [...], "ess": 280 },
+  "k":     { "trace": [...], "frequencies": {"7": 800, "9": 1200}, "acf": [...], "ess": 310 },
+  "burn_in": { "beta_trace": [...] }
+}
+```
+
+**What to look for:**
+
+| Diagnostic | Healthy | Problem |
+|---|---|---|
+| `mh_acceptance.rate` | 0.20 – 0.50 | Below 0.10: `beta_step` too large. Above 0.70: `beta_step` too small. |
+| `beta.ess` | > 100 (for n_samples=1000) | Very low (< 20): high autocorrelation — increase `beta_step` or `thinning`. |
+| `beta.acf` | Drops to ~0 within 20 lags | Slow decay: chain mixing poorly for β. |
+| `k.frequencies` | Spread across multiple values | Single k dominates: try a wider `k-range`. |
+| `burn_in.beta_trace` | Stabilises well before end | Still drifting at end: increase `--burn-in`. |
