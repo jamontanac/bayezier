@@ -1,8 +1,9 @@
 # Python Bindings & PyO3/Maturin Compilation Guide
 
+
 One of the main issues i faced when developing the Rust implementation was how to expose it to Python users in a way that is both efficient and user-friendly. Here i describe what is the usage of the Python bindings for this implementation, detailing how they are structured, compiled using PyO3 and Maturin, and run using the Pixi developer environment.
 This is just an experimental approach of exposing both zig and rust implementation to python.
-
+for the case of Rust we compiled using PyO3 and Maturin, optimized with Global Interpreter Lock (GIL) release, self-documented via PyO3 docstrings, and run using the Pixi developer environment.
 
 ---
 
@@ -56,6 +57,18 @@ maturin develop --manifest-path rust/pnn-py/Cargo.toml --uv --features extension
 - `maturin develop` builds the crate and installs the resulting module directly into the active Python virtual environment.
 - The `--uv` flag speeds up the package resolution and installation.
 - The `extension-module` feature in PyO3 avoids linking against the python library directly during building (which is required on macOS and Linux to avoid link errors).
+
+---
+
+## Performance & Usability Optimizations
+
+### 1. Global Interpreter Lock (GIL) Release
+For high performance, computational sampler execution runs off-GIL. Python's GIL is released using `py.allow_threads(...)` before entering the core MCMC sampling loop:
+- **Parallel Execution**: Allows multi-threaded Python applications (e.g., executing multiple chains using `ThreadPoolExecutor`) to run concurrently without blocking.
+- **Minimal Overhead**: Input data conversions from Python arrays/sequences to native Rust types are performed while holding the GIL, and the GIL is only released for CPU-intensive computations.
+
+### 2. Embedded Docstrings
+Both APIs are fully self-documenting. PyO3 docstrings are compiled directly into the binary module. Calling `help(pnn_py.run_from_csv)` or using autocompletion in Jupyter/VS Code displays parameter documentation, defaults, and return schemas directly.
 
 ---
 
@@ -164,17 +177,18 @@ To ensure consistency between the CSV and in-memory workflows, the pipeline was 
 
 ---
 
-## Python Benchmark Runner
+## Python Benchmark Scripts
 
+### 1. CSV-based Benchmark Runner (`run_rust_py.py`)
 The script [benchmarks/run_rust_py.py](file:///Users/jmontana/Documents/bayezier/benchmarks/run_rust_py.py) wraps `run_from_csv` and prints a summary.
 
-### Running with Pixi
+#### Running with Pixi:
 A Pixi task `py-benchmark` is registered in `pixi.toml` to execute this script directly:
 ```bash
 pixi run -e dev py-benchmark
 ```
 
-Or execute it manually with custom parameters:
+Or execute it manually:
 ```bash
 pixi run -e dev python benchmarks/run_rust_py.py \
   --train data/sample_train.csv \
@@ -185,4 +199,34 @@ pixi run -e dev python benchmarks/run_rust_py.py \
   --n-samples 200 \
   --burn-in 50 \
   --seed 42
+```
+
+---
+
+### 2. Array-based Benchmark Runner (`run_rust_py_arrays.py`)
+The script [benchmarks/run_rust_py_arrays.py](file:///Users/jmontana/Documents/bayezier/benchmarks/run_rust_py_arrays.py) loads features and labels from CSV files into memory, constructs native list or NumPy matrices, and calls `run_from_arrays(...)`.
+
+Features:
+- **Default Mode**: Uses Python lists for representation.
+- **NumPy Mode**: If the `--use-numpy` flag is set, converts features and labels into NumPy matrices. *Note: NumPy is not pre-installed in the default Pixi environment and requires installation to run this mode.*
+- **Out & Parity Outputs**: Writes results JSON using `--out`, and optionally writes a verification file via `--parity-out`.
+
+#### Running with Pixi:
+A Pixi task `py-benchmark-arrays` is registered in `pixi.toml` to run this:
+```bash
+pixi run -e dev py-benchmark-arrays
+```
+
+Or execute it manually:
+```bash
+pixi run -e dev python benchmarks/run_rust_py_arrays.py \
+  --train data/sample_train.csv \
+  --test data/sample_test.csv \
+  --parity-out benchmarks/out/rust_py_arrays_parity.json \
+  --dataset sample \
+  --implementation rust-py-arrays \
+  --k 3 \
+  --n-samples 50 \
+  --burn-in 10 \
+  --seed 1
 ```
