@@ -230,3 +230,17 @@ pixi run -e dev python benchmarks/run_rust_py_arrays.py \
   --burn-in 10 \
   --seed 1
 ```
+
+---
+
+### 3. Multi-Dataset Evaluation Script (`run_evaluation.py`)
+The script [benchmarks/run_evaluation.py](file:///Users/jmontana/Documents/bayezier/benchmarks/run_evaluation.py) runs the model across all six standard datasets under [data/](file:///Users/jmontana/Documents/bayezier/data/) (Cushings, Viruses, Crabs, Glass, Pima, and Synthetic Ripley).
+
+This script uses `pnn_py.run_from_arrays` in memory and generates a summary Markdown report:
+- Automatically saves outputs to `benchmarks/out/<dataset>_eval_rust_py.json` and diagnostics files.
+- Generates `benchmarks/evaluation_report.md` with dataset sizes, testing accuracies, mean posterior parameters ($k$ and $\beta$), and runtimes.
+
+#### Running with Pixi:
+```bash
+pixi run -e dev py-evaluation
+```

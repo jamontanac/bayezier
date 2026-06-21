@@ -26,6 +26,7 @@ py-build = { cmd = "maturin develop --manifest-path rust/pnn-py/Cargo.toml --uv 
 py-smoke = { cmd = "python -c \"import pnn_py; print('pnn_py import OK')\"" }
 py-benchmark = { cmd = "python benchmarks/run_rust_py.py --train data/sample_train.csv --test data/sample_test.csv --out benchmarks/out/rust_py.json --dataset sample --implementation rust-py --k 3 --n-samples 50 --burn-in 10 --seed 1" }
 py-benchmark-arrays = { cmd = "python benchmarks/run_rust_py_arrays.py --train data/sample_train.csv --test data/sample_test.csv --out benchmarks/out/rust_py_arrays.json --dataset sample --implementation rust-py-arrays --k 3 --n-samples 50 --burn-in 10 --seed 1" }
+py-evaluation = { cmd = "python benchmarks/run_evaluation.py" }
 compare = { cmd = "python benchmarks/compare.py --rust-output benchmarks/out/rust.json --baseline-output benchmarks/out/rust_baseline.json --tolerance 1e-4" }
 parity = { cmd = "pixi run rust-benchmark && python benchmarks/compare.py --rust-output benchmarks/out/rust.json --baseline-output benchmarks/out/rust_baseline.json --tolerance 1e-4" }
 
