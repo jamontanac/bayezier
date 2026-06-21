@@ -77,9 +77,9 @@ fn run_hybrid(
 
         // --- MH step: propose β* = β + N(0, σ²) ---
         let beta_prop = beta + normal.sample(&mut rng);
-        if beta_prop > 0.0 {
-            // log acceptance ratio: log p(β*|k,data) - log p(β|k,data)
+        let accepted = if beta_prop > 0.0 {
             // Gaussian proposal is symmetric so proposal ratio cancels.
+            // log acceptance ratio: log p(β*|k,data) - log p(β|k,data)
             let log_alpha = log_joint(
                 count_tensor,
                 &model.y_train,
