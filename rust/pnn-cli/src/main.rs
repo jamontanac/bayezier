@@ -69,6 +69,10 @@ struct Config {
     n_samples: usize,
     burn_in: usize,
     thinning: usize,
+    /// Gaussian proposal std dev for the MH step on β. Tunes acceptance rate (target 20–50%).
+    beta_step: f64,
+    /// Half-normal prior scale on β. Encodes prior belief about interaction strength.
+    beta_sigma: f64,
     seed: Option<u64>,
     diagnose: Option<PathBuf>,
 }
@@ -144,8 +148,9 @@ where
         n_samples: config.n_samples,
         burn_in: config.burn_in,
         thinning: config.thinning,
+        beta_step: config.beta_step,
+        beta_sigma: config.beta_sigma,
         seed: config.seed,
-        ..SamplerConfig::default()
     };
 
     let result: SamplerResult = sample_posterior(&model, &sampler_config);
@@ -218,6 +223,8 @@ where
     let mut n_samples = 1000usize;
     let mut burn_in = 500usize;
     let mut thinning = 1usize;
+    let mut beta_step = 0.3_f64;
+    let mut beta_sigma = 5.0_f64;
     let mut seed: Option<u64> = None;
     let mut diagnose: Option<PathBuf> = None;
 
@@ -357,6 +364,34 @@ where
                 }
                 idx += 2;
             }
+            "--beta-step" => {
+                let raw = string_value("--beta-step", next)?;
+                beta_step = raw.parse::<f64>().map_err(|_| {
+                    CliError::Message(format!(
+                        "invalid value for --beta-step: {raw} (expected positive float)"
+                    ))
+                })?;
+                if beta_step <= 0.0 {
+                    return Err(CliError::Message(
+                        "invalid value for --beta-step: must be > 0".to_string(),
+                    ));
+                }
+                idx += 2;
+            }
+            "--beta-sigma" => {
+                let raw = string_value("--beta-sigma", next)?;
+                beta_sigma = raw.parse::<f64>().map_err(|_| {
+                    CliError::Message(format!(
+                        "invalid value for --beta-sigma: {raw} (expected positive float)"
+                    ))
+                })?;
+                if beta_sigma <= 0.0 {
+                    return Err(CliError::Message(
+                        "invalid value for --beta-sigma: must be > 0".to_string(),
+                    ));
+                }
+                idx += 2;
+            }
             "--method" => {
                 let raw = string_value("--method", next)?;
                 method = match raw.as_str() {
@@ -408,7 +443,7 @@ where
         .or(k_range_explicit)
         .unwrap_or_else(|| vec![k_single.unwrap_or(3)]);
 
-    Ok(Config { train, test, output, dataset, implementation, k_values, method, n_samples, burn_in, thinning, seed, diagnose })
+    Ok(Config { train, test, output, dataset, implementation, k_values, method, n_samples, burn_in, thinning, beta_step, beta_sigma, seed, diagnose })
 }
 
 fn path_value(flag: &str, next: Option<String>) -> Result<PathBuf, CliError> {
@@ -427,6 +462,7 @@ fn usage() -> String {
         [--k <int>] [--k-values <int,int,...>] [--k-range <start,end>] \
         [--method hybrid|joint-mh] \
         [--n-samples <int>] [--burn-in <int>] [--thinning <int>] [--seed <int>] \
+        [--beta-step <float>] [--beta-sigma <float>] \
         [--diagnose <path>]",
     )
 }
@@ -746,6 +782,80 @@ mod tests {
     }
 
     #[test]
+    fn diagnose_records_beta_step_and_beta_sigma_in_config() {
+        let temp = tempdir().expect("tempdir");
+        let (train, test) = toy_csvs(&temp);
+        let out = temp.path().join("out.json");
+        let diag = temp.path().join("diag.json");
+
+        run_with_args(args_with_diagnose(
+            &train,
+            &test,
+            &out,
+            &diag,
+            &[("--beta-step", "0.05"), ("--beta-sigma", "2.5")],
+        ))
+        .expect("run_with_args");
+
+        let raw = fs::read_to_string(&diag).expect("read diag");
+        let d: Value = serde_json::from_str(&raw).expect("valid json");
+
+        assert_eq!(d["config"]["beta_step"].as_f64().unwrap(), 0.05);
+        assert_eq!(d["config"]["beta_sigma"].as_f64().unwrap(), 2.5);
+    }
+
+    #[test]
+    fn diagnose_acceptance_rate_responds_to_beta_step() {
+        let temp = tempdir().expect("tempdir");
+        let (train, test) = toy_csvs(&temp);
+
+        let out_small = temp.path().join("out_small.json");
+        let diag_small = temp.path().join("diag_small.json");
+        run_with_args(args_with_diagnose(
+            &train,
+            &test,
+            &out_small,
+            &diag_small,
+            &[
+                ("--n-samples", "120"),
+                ("--burn-in", "30"),
+                ("--beta-step", "0.05"),
+            ],
+        ))
+        .expect("run_with_args small beta-step");
+
+        let out_large = temp.path().join("out_large.json");
+        let diag_large = temp.path().join("diag_large.json");
+        run_with_args(args_with_diagnose(
+            &train,
+            &test,
+            &out_large,
+            &diag_large,
+            &[
+                ("--n-samples", "120"),
+                ("--burn-in", "30"),
+                ("--beta-step", "2.0"),
+            ],
+        ))
+        .expect("run_with_args large beta-step");
+
+        let small: Value =
+            serde_json::from_str(&fs::read_to_string(&diag_small).expect("read small diag"))
+                .expect("valid small diag json");
+        let large: Value =
+            serde_json::from_str(&fs::read_to_string(&diag_large).expect("read large diag"))
+                .expect("valid large diag json");
+
+        let small_rate = small["mh_acceptance"]["rate"].as_f64().unwrap();
+        let large_rate = large["mh_acceptance"]["rate"].as_f64().unwrap();
+
+        assert!(
+            small_rate > large_rate,
+            "expected smaller --beta-step to increase acceptance rate, got small={small_rate}, large={large_rate}"
+        );
+    }
+
+    #[test]
     fn main_output_unchanged_when_diagnose_is_set() {
         let temp = tempdir().expect("tempdir");
         let (train, test) = toy_csvs(&temp);
@@ -780,6 +890,26 @@ mod tests {
             .expect_err("expected invalid --thinning value");
         assert!(
             err.to_string().contains("invalid value for --thinning: must be >= 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn fails_on_zero_beta_step_value() {
+        let err = run_with_args(vec!["--beta-step".to_string(), "0".to_string()])
+            .expect_err("expected invalid --beta-step value");
+        assert!(
+            err.to_string().contains("invalid value for --beta-step: must be > 0"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn fails_on_zero_beta_sigma_value() {
+        let err = run_with_args(vec!["--beta-sigma".to_string(), "0".to_string()])
+            .expect_err("expected invalid --beta-sigma value");
+        assert!(
+            err.to_string().contains("invalid value for --beta-sigma: must be > 0"),
             "unexpected error: {err}"
         );
     }
