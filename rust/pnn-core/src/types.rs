@@ -102,6 +102,21 @@ pub struct PosteriorDraw {
     pub beta: f64,
 }
 
+// ── Sampler result ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct SamplerResult {
+    /// Post-burn-in, post-thinning draws — the posterior chain.
+    pub chain: Vec<PosteriorDraw>,
+    /// Every burn-in draw at full resolution (no thinning), in iteration order.
+    pub burn_in_chain: Vec<PosteriorDraw>,
+    /// Proposals accepted during the post-burn-in phase.
+    /// Hybrid: β MH accepts. JointMh: joint (k*, β*) accepts.
+    pub n_accepted: usize,
+    /// Total Gibbs+MH cycles run: burn_in + n_samples * thinning.
+    pub total_iters: usize,
+}
+
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
