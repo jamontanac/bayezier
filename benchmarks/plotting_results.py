@@ -139,11 +139,19 @@ def plot_classification_results(
         contours = plt.contour(xx, yy, zz_conf, levels=levels, colors="black", linewidths=0.6, alpha=0.8, zorder=2)
         plt.clabel(contours, inline=True, fontsize=8, fmt="%.1f")
 
-    # Scatter plot test data points colored by true class
+    # Scatter plot test data points colored by true class (cap at 300 for readability)
+    MAX_SCATTER = 300
+    if len(X_test) > MAX_SCATTER:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(len(X_test), MAX_SCATTER, replace=False)
+        X_scatter, Y_scatter = X_test[idx], Y_test[idx]
+    else:
+        X_scatter, Y_scatter = X_test, Y_test
+
     scatter = plt.scatter(
-        X_test[:, x_feature_idx],
-        X_test[:, y_feature_idx],
-        c=Y_test,
+        X_scatter[:, x_feature_idx],
+        X_scatter[:, y_feature_idx],
+        c=Y_scatter,
         cmap="Set1",
         edgecolors="black",
         linewidths=0.8,

@@ -11,6 +11,10 @@ from pathlib import Path
 import statistics
 import time
 
+import numpy as np
+from sklearn.feature_selection import f_classif
+from sklearn.preprocessing import StandardScaler
+
 import pnn_py
 
 DATASETS = [
@@ -22,7 +26,6 @@ DATASETS = [
         "n_samples": 1000,
         "burn_in": 200,
         "beta_step": 0.3,
-        "plot_features": (0, 1),  # Tetrahydrocortisone + Pregnanetriol (only 2 features)
     },
     {
         "name": "crabs",
@@ -32,7 +35,6 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
-        "plot_features": (1, 2),  # FL (frontal lip) + RW (rear width)
     },
     {
         "name": "fglass",
@@ -42,7 +44,6 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
-        "plot_features": (1, 2),  # Na + Mg
     },
     {
         "name": "pima",
@@ -52,7 +53,6 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.15,
-        "plot_features": (4, 5),  # bmi + ped (diabetes pedigree function)
     },
     {
         "name": "synth",
@@ -62,7 +62,6 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
-        "plot_features": (0, 1),  # xs + ys (only 2 features)
     },
     {
         "name": "iris",
@@ -72,7 +71,6 @@ DATASETS = [
         "n_samples": 1000,
         "burn_in": 200,
         "beta_step": 0.3,
-        "plot_features": (2, 3),  # petal_length_cm + petal_width_cm
     },
     {
         "name": "wine",
@@ -82,7 +80,6 @@ DATASETS = [
         "n_samples": 1000,
         "burn_in": 200,
         "beta_step": 0.3,
-        "plot_features": (6, 12),  # flavanoids + proline
     },
     {
         "name": "breast_cancer",
@@ -92,7 +89,6 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
-        "plot_features": (0, 6),  # mean_radius + mean_concavity
     },
 ]
 
@@ -138,33 +134,61 @@ def run_eval():
             print(f" ERROR (Failed to load CSV: {e})")
             continue
 
+        # Normalize: fit on train, apply to both splits
+        scaler = StandardScaler()
+        train_arr = scaler.fit_transform(np.array(train_x))
+        test_arr = scaler.transform(np.array(test_x))
+        train_x = train_arr.tolist()
+        test_x = test_arr.tolist()
+
+        # Select top-2 features by ANOVA F-score for plotting
+        f_scores, _ = f_classif(train_arr, train_y)
+        top2 = np.argsort(f_scores)[::-1][:2]
+        feat_x, feat_y = int(top2[0]), int(top2[1])
+        print(f"\n  Plot features: {feat_x} and {feat_y} "
+              f"(F={f_scores[feat_x]:.1f}, F={f_scores[feat_y]:.1f})", end="")
+
+        # Run both methods; hybrid drives the accuracy table and boundary plot
+        METHODS = ["hybrid", "joint-mh"]
+        method_payloads: dict = {}
+        method_diag_paths: dict = {}
+
         start_time = time.perf_counter()
-        try:
-            payload = pnn_py.run_from_arrays(
-                x_train=train_x,
-                y_train=train_y,
-                x_test=test_x,
-                y_test=test_y,
-                dataset=name,
-                implementation="rust-py-evaluation",
-                k_range=ds["k_range"],
-                n_samples=ds["n_samples"],
-                burn_in=ds["burn_in"],
-                beta_step=ds["beta_step"],
-                seed=42,
-                out_path=f"benchmarks/out/{name}_eval_rust_py.json",
-                diagnose_path=f"benchmarks/out/{name}_eval_diag_rust_py.json",
-            )
-        except Exception as e:
-            print(f" ERROR (Execution failed: {e})")
+        for method in METHODS:
+            method_tag = method.replace("-", "_")
+            out_p  = f"benchmarks/out/{name}_{method_tag}_eval.json"
+            diag_p = f"benchmarks/out/{name}_{method_tag}_diag.json"
+            method_diag_paths[method] = diag_p
+            try:
+                method_payloads[method] = pnn_py.run_from_arrays(
+                    x_train=train_x,
+                    y_train=train_y,
+                    x_test=test_x,
+                    y_test=test_y,
+                    dataset=name,
+                    implementation=f"rust-py-{method_tag}",
+                    method=method,
+                    k_range=ds["k_range"],
+                    n_samples=ds["n_samples"],
+                    burn_in=ds["burn_in"],
+                    beta_step=ds["beta_step"],
+                    seed=42,
+                    out_path=out_p,
+                    diagnose_path=diag_p,
+                )
+            except Exception as e:
+                print(f"\n  ERROR ({method} failed: {e})")
+
+        if "hybrid" not in method_payloads:
+            print(" SKIPPING (hybrid run failed)")
             continue
 
+        payload = method_payloads["hybrid"]
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
-        # Plot classification results
+        # Classification boundary plot (hybrid only — avoids doubling the grid prediction cost)
         try:
             from plotting_results import plot_classification_results
-            feat_x, feat_y = ds.get("plot_features", (0, 1))
             plot_classification_results(
                 x_train=train_x,
                 y_train=train_y,
@@ -182,7 +206,16 @@ def run_eval():
                 y_feature_idx=feat_y,
             )
         except Exception as plot_err:
-            print(f"  [Warning] Plotting failed: {plot_err}")
+            print(f"  [Warning] Boundary plot failed: {plot_err}")
+
+        # MCMC diagnostics plots for each method
+        try:
+            from plot_diagnostics import plot_diagnostics
+            output_dir = Path("benchmarks") / f"plot_results_{name}"
+            for method, diag_p in method_diag_paths.items():
+                plot_diagnostics(diag_p, name, method, output_dir)
+        except Exception as diag_err:
+            print(f"  [Warning] Diagnostics plot failed: {diag_err}")
 
         misclass_cost = payload["misclassification_cost"]
         accuracy = (1.0 - misclass_cost) * 100.0
