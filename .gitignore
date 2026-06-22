@@ -25,3 +25,5 @@ data/PRNN
 #local data
 data/*.csv
 data/*.json
+
+benchmarks/*/*.png
