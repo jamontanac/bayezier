@@ -236,11 +236,24 @@ pixi run -e dev python benchmarks/run_rust_py_arrays.py \
 ### 3. Multi-Dataset Evaluation Script (`run_evaluation.py`)
 The script [benchmarks/run_evaluation.py](file:///Users/jmontana/Documents/bayezier/benchmarks/run_evaluation.py) runs the model across all six standard datasets under [data/](file:///Users/jmontana/Documents/bayezier/data/) (Cushings, Viruses, Crabs, Glass, Pima, and Synthetic Ripley).
 
-This script uses `pnn_py.run_from_arrays` in memory and generates a summary Markdown report:
+This script uses `pnn_py.run_from_arrays` in memory, integrates with the plotting helper to visualize decision boundaries, and generates a summary Markdown report:
 - Automatically saves outputs to `benchmarks/out/<dataset>_eval_rust_py.json` and diagnostics files.
+- Invokes the plotting utility [benchmarks/plotting_results.py](file:///Users/jmontana/Documents/bayezier/benchmarks/plotting_results.py) to render classification decision regions and test data points.
 - Generates `benchmarks/evaluation_report.md` with dataset sizes, testing accuracies, mean posterior parameters ($k$ and $\beta$), and runtimes.
 
 #### Running with Pixi:
 ```bash
 pixi run -e dev py-evaluation
 ```
+
+---
+
+### 4. Classification Results Plotting Utility (`plotting_results.py`)
+The script [benchmarks/plotting_results.py](file:///Users/jmontana/Documents/bayezier/benchmarks/plotting_results.py) provides reusable logic to visualize model classification boundaries and test dataset points.
+
+Features:
+- **Automatic Axis Tuning**: Selects the first two features of the test data and computes plotting limits with 10% padding based on the data ranges.
+- **High-Dimensional Handling**: For datasets with more than 2 features, projects the decision boundary in the 2D plane of the first two features while keeping all other features fixed at their training mean values.
+- **Batch Evaluation**: Evaluates the decision boundary on an $80 \times 80$ grid in a single vectorized batch call to `run_from_arrays` for speed.
+- **Graceful Fallbacks**: Lazily checks for `matplotlib` and `numpy`. If they are not installed in the environment, it prints a warning and skips plotting rather than crashing the evaluation script.
+- **Structured Storage**: Saves the output plots to `benchmarks/plot_results_{dataset}/decision_boundary.png`.

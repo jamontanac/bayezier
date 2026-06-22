@@ -22,15 +22,7 @@ DATASETS = [
         "n_samples": 1000,
         "burn_in": 200,
         "beta_step": 0.3,
-    },
-    {
-        "name": "viruses",
-        "train": "data/viruses_train.csv",
-        "test": "data/viruses_test.csv",
-        "k_range": (1, 5),
-        "n_samples": 1000,
-        "burn_in": 300,
-        "beta_step": 0.3,
+        "plot_features": (0, 1),  # Tetrahydrocortisone + Pregnanetriol (only 2 features)
     },
     {
         "name": "crabs",
@@ -40,6 +32,7 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
+        "plot_features": (1, 2),  # FL (frontal lip) + RW (rear width)
     },
     {
         "name": "fglass",
@@ -49,6 +42,7 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
+        "plot_features": (1, 2),  # Na + Mg
     },
     {
         "name": "pima",
@@ -58,6 +52,7 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.15,
+        "plot_features": (4, 5),  # bmi + ped (diabetes pedigree function)
     },
     {
         "name": "synth",
@@ -67,6 +62,37 @@ DATASETS = [
         "n_samples": 2000,
         "burn_in": 500,
         "beta_step": 0.3,
+        "plot_features": (0, 1),  # xs + ys (only 2 features)
+    },
+    {
+        "name": "iris",
+        "train": "data/iris_train.csv",
+        "test": "data/iris_test.csv",
+        "k_range": (1, 10),
+        "n_samples": 1000,
+        "burn_in": 200,
+        "beta_step": 0.3,
+        "plot_features": (2, 3),  # petal_length_cm + petal_width_cm
+    },
+    {
+        "name": "wine",
+        "train": "data/wine_train.csv",
+        "test": "data/wine_test.csv",
+        "k_range": (1, 10),
+        "n_samples": 1000,
+        "burn_in": 200,
+        "beta_step": 0.3,
+        "plot_features": (6, 12),  # flavanoids + proline
+    },
+    {
+        "name": "breast_cancer",
+        "train": "data/breast_cancer_train.csv",
+        "test": "data/breast_cancer_test.csv",
+        "k_range": (1, 20),
+        "n_samples": 2000,
+        "burn_in": 500,
+        "beta_step": 0.3,
+        "plot_features": (0, 6),  # mean_radius + mean_concavity
     },
 ]
 
@@ -134,6 +160,29 @@ def run_eval():
             continue
 
         duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+        # Plot classification results
+        try:
+            from plotting_results import plot_classification_results
+            feat_x, feat_y = ds.get("plot_features", (0, 1))
+            plot_classification_results(
+                x_train=train_x,
+                y_train=train_y,
+                x_test=test_x,
+                y_test=test_y,
+                dataset_name=name,
+                sampler_config={
+                    "k_range": ds["k_range"],
+                    "n_samples": ds["n_samples"],
+                    "burn_in": ds["burn_in"],
+                    "beta_step": ds["beta_step"],
+                    "seed": 42,
+                },
+                x_feature_idx=feat_x,
+                y_feature_idx=feat_y,
+            )
+        except Exception as plot_err:
+            print(f"  [Warning] Plotting failed: {plot_err}")
 
         misclass_cost = payload["misclassification_cost"]
         accuracy = (1.0 - misclass_cost) * 100.0
